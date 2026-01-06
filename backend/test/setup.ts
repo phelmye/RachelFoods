@@ -1,4 +1,2 @@
-/// <reference types="jest" />
-/// <reference types="node" />
-
-// This file ensures Jest types are available globally in all test files
+// Jest setup file for test environment
+// Ensures Jest globals are available in all test files
