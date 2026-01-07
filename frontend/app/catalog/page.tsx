@@ -47,7 +47,7 @@ export default async function CatalogPage({
                         <div className="flex flex-wrap gap-3">
                             <Link
                                 href="/catalog"
-                                className={`px-4 py-2 rounded-lg border transition-colors ${!searchParams.category
+                                className={`px-4 py-2 rounded-lg border transition-colors ${!params.category
                                     ? 'bg-primary text-white border-primary'
                                     : 'border-border hover:border-primary'
                                     }`}
@@ -58,7 +58,7 @@ export default async function CatalogPage({
                                 <Link
                                     key={category.id}
                                     href={`/catalog?category=${category.slug}`}
-                                    className={`px-4 py-2 rounded-lg border transition-colors ${searchParams.category === category.slug
+                                    className={`px-4 py-2 rounded-lg border transition-colors ${params.category === category.slug
                                         ? 'bg-primary text-white border-primary'
                                         : 'border-border hover:border-primary'
                                         }`}
@@ -74,7 +74,7 @@ export default async function CatalogPage({
                 <div className="mb-8 flex gap-4">
                     <Link
                         href="/catalog?featured=true"
-                        className={`px-4 py-2 rounded-lg border transition-colors ${searchParams.featured === 'true'
+                        className={`px-4 py-2 rounded-lg border transition-colors ${params.featured === 'true'
                             ? 'bg-secondary text-white border-secondary'
                             : 'border-border hover:border-secondary'
                             }`}
