@@ -10,10 +10,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // Disable turbopack to avoid Windows resource errors
-  experimental: {
-    turbo: false,
-  },
 };
 
 export default nextConfig;
