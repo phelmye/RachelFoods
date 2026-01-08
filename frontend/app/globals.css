@@ -59,3 +59,17 @@ body {
     background-color 0.3s,
     color 0.3s;
 }
+
+/* Ensure proper background colors */
+.bg-background {
+  background-color: var(--color-background);
+}
+
+.bg-muted {
+  background-color: var(--color-muted);
+}
+
+/* Fix gradient backgrounds */
+.bg-gradient-to-br {
+  background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
