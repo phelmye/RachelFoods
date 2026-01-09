@@ -23,9 +23,9 @@ export class ThemeService {
             this.logger.log('No active theme found, creating default theme');
             theme = await this.prisma.theme_config.create({
                 data: {
-                    primaryColor: '#2563eb',   // blue-600
-                    secondaryColor: '#7c3aed', // violet-600
-                    accentColor: '#f59e0b',    // amber-500
+                    primaryColor: '#5A080C',   // Deep burgundy - brand primary
+                    secondaryColor: '#9F541B', // Burnt orange/brown - brand secondary
+                    accentColor: '#c2410c',    // Brighter orange for CTAs
                     defaultMode: 'light',
                     isActive: true,
                 },
