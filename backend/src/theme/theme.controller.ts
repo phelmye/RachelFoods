@@ -40,4 +40,14 @@ export class ThemeController {
     async updateActiveTheme(@Body() updateDto: UpdateThemeDto): Promise<ThemeConfig> {
         return this.themeService.updateActiveTheme(updateDto);
     }
+
+    /**
+     * PATCH /api/theme/public-update
+     * TEMPORARY: Update theme without auth (for testing only - REMOVE IN PRODUCTION)
+     */
+    @Patch('public-update')
+    @ApiOperation({ summary: 'Update theme (temporary public endpoint)' })
+    async publicUpdateTheme(@Body() updateDto: UpdateThemeDto): Promise<ThemeConfig> {
+        return this.themeService.updateActiveTheme(updateDto);
+    }
 }
