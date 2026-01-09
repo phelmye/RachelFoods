@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-:root {
+@theme {
   /* Dynamic theme colors - loaded from backend */
   --color-primary: #2563eb;
   --color-primary-50: #eff6ff;
@@ -42,6 +42,14 @@
   --color-foreground: #171717;
   --color-muted: #f3f4f6;
   --color-border: #e5e7eb;
+  
+  /* Define colors for Tailwind */
+  --color-primary: #2563eb;
+  --color-secondary: #7c3aed;
+  --color-accent: #f59e0b;
+  --color-foreground: #171717;
+  --color-background: #ffffff;
+  --color-muted: #f3f4f6;
 }
 
 .dark {
