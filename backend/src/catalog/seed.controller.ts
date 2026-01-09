@@ -1,4 +1,4 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Post, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductStatus, CategoryStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,6 +9,11 @@ export class SeedController {
 
     @Post('catalog')
     async seedCatalog() {
+        // PRODUCTION LOCKDOWN: Prevent catalog seeding in production environments
+        if (process.env.NODE_ENV === 'production') {
+            throw new ForbiddenException('Catalog seeding is disabled in production environments.');
+        }
+
         const createSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
         const CATEGORIES = [
