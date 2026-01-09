@@ -1,4 +1,4 @@
-const API_BASE = process.env.NODE_ENV === 'production' 
+const API_BASE = process.env.NODE_ENV === 'production'
     ? 'https://rachelfood-backend.onrender.com/api'
     : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api');
 
@@ -38,7 +38,7 @@ export const api = {
 
     // Categories
     getCategories: async () => {
-        const res = await fetch(`${API_BASE}/catalog/categories`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/categories`, { cache: 'no-store' });
         if (!res.ok) throw new Error('Failed to fetch categories');
         return res.json();
     },
@@ -46,15 +46,15 @@ export const api = {
     // Products
     getProducts: async (categorySlug?: string) => {
         const url = categorySlug
-            ? `${API_BASE}/catalog/categories/${categorySlug}/products`
-            : `${API_BASE}/catalog/products`;
+            ? `${API_BASE}/categories/${categorySlug}/products`
+            : `${API_BASE}/products`;
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error('Failed to fetch products');
         return res.json();
     },
 
     getProduct: async (slug: string) => {
-        const res = await fetch(`${API_BASE}/catalog/products/${slug}`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/products/${slug}`, { cache: 'no-store' });
         if (!res.ok) throw new Error('Failed to fetch product');
         return res.json();
     },
