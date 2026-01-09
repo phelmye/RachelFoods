@@ -41,7 +41,7 @@ export default function Home() {
               <div className="flex-1 flex justify-center">
                 <div className="relative w-64 h-64 md:w-96 md:h-96">
                   <Image
-                    src="/assets/logo.png"
+                    src="/logo.png"
                     alt="RachelFoods"
                     fill
                     className="object-contain"
