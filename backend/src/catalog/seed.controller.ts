@@ -1,5 +1,6 @@
 import { Controller, Post } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductStatus, CategoryStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 
 @Controller('api/seed')
@@ -45,7 +46,7 @@ export class SeedController {
                 categoryMap[cat.name] = existing.id;
             } else {
                 const created = await this.prisma.categories.create({
-                    data: { id: uuidv4(), name: cat.name, slug: createSlug(cat.name), description: cat.description, status: 'ACTIVE', updatedAt: new Date() }
+                    data: { id: uuidv4(), name: cat.name, slug: createSlug(cat.name), description: cat.description, status: CategoryStatus.ACTIVE, updatedAt: new Date() }
                 });
                 categoryMap[cat.name] = created.id;
             }
@@ -60,7 +61,7 @@ export class SeedController {
                         id: uuidv4(), name: product.name, slug: createSlug(product.name), description: product.description,
                         price: product.price, unit: product.unit, weight: product.weight, stock: 50,
                         perishable: product.perishable || false, categoryId: categoryMap[product.category],
-                        status: 'PUBLISHED', images: [], updatedAt: new Date()
+                        status: ProductStatus.ACTIVE, images: [], updatedAt: new Date()
                     }
                 });
                 created++;
