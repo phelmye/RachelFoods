@@ -362,7 +362,7 @@ export class ProductService {
                 ],
             },
             include: {
-                categories: {
+                category: {
                     select: {
                         id: true,
                         name: true,

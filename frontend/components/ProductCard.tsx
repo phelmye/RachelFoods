@@ -9,10 +9,20 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-    const hasDiscount = product.compareAtPrice && product.compareAtPrice > product.price;
+    // Defensive: Convert price to number if it's a string (backend Decimal)
+    const price = typeof product.price === 'string' ? parseFloat(product.price) : product.price;
+    const comparePrice = product.compareAtPrice
+        ? (typeof product.compareAtPrice === 'string' ? parseFloat(product.compareAtPrice) : product.compareAtPrice)
+        : null;
+
+    const hasDiscount = comparePrice && comparePrice > price;
     const discountPercent = hasDiscount
-        ? Math.round(((product.compareAtPrice! - product.price) / product.compareAtPrice!) * 100)
+        ? Math.round(((comparePrice - price) / comparePrice) * 100)
         : 0;
+
+    // Defensive: Handle missing isAvailable and isFeatured fields
+    const isAvailable = product.isAvailable ?? (product.stock > 0);
+    const isFeatured = product.isFeatured ?? false;
 
     return (
         <Link href={`/products/${product.slug}`}>
@@ -49,22 +59,22 @@ export function ProductCard({ product }: ProductCardProps) {
 
                 <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-2xl font-bold text-primary">
-                        ${product.price.toFixed(2)}
+                        ₦{price.toFixed(2)}
                     </span>
-                    {hasDiscount && (
+                    {hasDiscount && comparePrice && (
                         <span className="text-sm text-foreground/50 line-through">
-                            ${product.compareAtPrice!.toFixed(2)}
+                            ₦{comparePrice.toFixed(2)}
                         </span>
                     )}
                     <span className="text-sm text-foreground/70">/ {product.unit}</span>
                 </div>
 
                 <div className="flex items-center justify-between">
-                    <span className={`text-sm ${product.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                        {product.isAvailable ? `${product.stock} in stock` : 'Out of stock'}
+                    <span className={`text-sm ${isAvailable ? 'text-green-600' : 'text-red-600'}`}>
+                        {isAvailable ? `${product.stock} in stock` : 'Out of stock'}
                     </span>
 
-                    {product.isFeatured && (
+                    {isFeatured && (
                         <span className="text-xs bg-secondary/10 text-secondary px-2 py-1 rounded">
                             Featured
                         </span>

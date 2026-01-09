@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 export function Footer() {
     return (
         <footer className="border-t border-border bg-muted mt-auto">
@@ -13,24 +15,24 @@ export function Footer() {
                     <div>
                         <h4 className="font-semibold mb-4">Shop</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><a href="/catalog" className="hover:text-primary transition-colors">All Products</a></li>
-                            <li><a href="/catalog?featured=true" className="hover:text-primary transition-colors">Featured</a></li>
+                            <li><Link href="/catalog" className="hover:text-primary transition-colors">All Products</Link></li>
+                            <li><Link href="/catalog?featured=true" className="hover:text-primary transition-colors">Featured</Link></li>
                         </ul>
                     </div>
 
                     <div>
                         <h4 className="font-semibold mb-4">Account</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><a href="/orders" className="hover:text-primary transition-colors">My Orders</a></li>
-                            <li><a href="/profile" className="hover:text-primary transition-colors">Profile</a></li>
+                            <li><Link href="/orders" className="hover:text-primary transition-colors">My Orders</Link></li>
+                            <li><Link href="/profile" className="hover:text-primary transition-colors">Profile</Link></li>
                         </ul>
                     </div>
 
                     <div>
                         <h4 className="font-semibold mb-4">Support</h4>
                         <ul className="space-y-2 text-sm">
-                            <li><a href="/help" className="hover:text-primary transition-colors">Help Center</a></li>
-                            <li><a href="/contact" className="hover:text-primary transition-colors">Contact Us</a></li>
+                            <li><Link href="/help" className="hover:text-primary transition-colors">Help Center</Link></li>
+                            <li><Link href="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>
                         </ul>
                     </div>
                 </div>

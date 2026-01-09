@@ -57,7 +57,7 @@ export class OrderService {
                 id: { in: productIds },
                 deletedAt: null,
             },
-            include: { categories: true },
+            include: { category: true },
         });
 
         if (products.length !== productIds.length) {
