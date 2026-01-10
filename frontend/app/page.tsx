@@ -29,11 +29,11 @@ export default async function Home() {
             <div className="flex flex-col md:flex-row items-center justify-between gap-12">
               <div className="flex-1 text-center md:text-left">
                 <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-                  Authentic Nigerian Food,{' '}
+                  Authentic Traditional Food,{' '}
                   <span className="text-primary">Delivered Fresh</span>
                 </h1>
                 <p className="text-xl text-foreground/70 mb-8 max-w-2xl">
-                  Premium quality traditional ingredients and ready mixes.
+                  Premium quality traditional ingredients and ready mixes delivered across the United States.
                   Every order confirmed by our sellers for guaranteed freshness and availability.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start mb-8">
@@ -74,7 +74,7 @@ export default async function Home() {
               <div className="text-center mb-12">
                 <h2 className="text-4xl font-bold mb-4">Popular Products</h2>
                 <p className="text-xl text-foreground/70 max-w-2xl mx-auto">
-                  Discover our most loved traditional Nigerian foods and ingredients
+                  Discover our most loved traditional foods and authentic ingredients
                 </p>
               </div>
 
@@ -134,48 +134,12 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* Features Section */}
-        <section className="py-20 bg-background">
-          <div className="container mx-auto px-4">
-            <h2 className="text-4xl font-bold text-center mb-12">Why Choose RachelFoods?</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="bg-muted p-8 rounded-lg border border-border">
-                <div className="text-5xl mb-4">✅</div>
-                <h3 className="text-2xl font-bold mb-4 text-primary">Seller Confirmed</h3>
-                <p className="text-foreground/70">
-                  Every order is reviewed and confirmed by the seller before payment.
-                  No surprises, guaranteed availability.
-                </p>
-              </div>
-
-              <div className="bg-muted p-8 rounded-lg border border-border">
-                <div className="text-5xl mb-4">🌾</div>
-                <h3 className="text-2xl font-bold mb-4 text-secondary">Authentic Quality</h3>
-                <p className="text-foreground/70">
-                  Traditional Nigerian ingredients sourced from trusted suppliers.
-                  Fresh, authentic, and true to taste.
-                </p>
-              </div>
-
-              <div className="bg-muted p-8 rounded-lg border border-border">
-                <div className="text-5xl mb-4">🚚</div>
-                <h3 className="text-2xl font-bold mb-4 text-accent">Fast Delivery</h3>
-                <p className="text-foreground/70">
-                  Professional delivery ensures your food arrives fresh and on time.
-                  Track your order every step of the way.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* CTA Section */}
         <section className="py-20 bg-primary text-white">
           <div className="container mx-auto px-4 text-center">
             <h2 className="text-4xl font-bold mb-6">Ready to Get Started?</h2>
             <p className="text-xl mb-8 max-w-2xl mx-auto opacity-90">
-              Browse our catalog of authentic Nigerian foods and experience
+              Browse our catalog of authentic traditional foods and experience
               hassle-free shopping with seller confirmation.
             </p>
             <Link
