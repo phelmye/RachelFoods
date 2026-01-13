@@ -3,28 +3,47 @@
 import { useState, useEffect } from 'react';
 import { formatCurrency } from '@/lib/currency';
 import Link from 'next/link';
+import { api } from '@/lib/api';
 
 interface Order {
     id: string;
     orderNumber: string;
     userId: string;
-    user: { fullName: string; email: string };
+    users: { firstName: string; lastName: string; email: string };
     status: string;
-    totalAmount: number;
+    paymentStatus: string;
+    totalCost: number;
     createdAt: string;
-    items: any[];
+    order_items: any[];
 }
 
 export default function AdminOrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('ALL');
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
 
     useEffect(() => {
-        // TODO: Fetch orders from backend
-        setLoading(false);
-        setOrders([]);
-    }, []);
+        fetchOrders();
+    }, [page, filter]);
+
+    const fetchOrders = async () => {
+        try {
+            setLoading(true);
+            const data = await api.getAdminOrders({
+                page,
+                limit: 20,
+                status: filter !== 'ALL' ? filter : undefined,
+            });
+            setOrders(data.data);
+            setTotalPages(data.pagination.totalPages);
+        } catch (error) {
+            console.error('Failed to fetch orders:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const filteredOrders = filter === 'ALL'
         ? orders
@@ -93,7 +112,7 @@ export default function AdminOrdersPage() {
                                         Order #{order.orderNumber}
                                     </h3>
                                     <p className="text-sm text-foreground/70">
-                                        {order.user.fullName} ({order.user.email})
+                                        {order.users.firstName} {order.users.lastName} ({order.users.email})
                                     </p>
                                     <p className="text-sm text-foreground/70">
                                         {new Date(order.createdAt).toLocaleString()}
@@ -108,22 +127,45 @@ export default function AdminOrdersPage() {
                             <div className="flex justify-between items-center pt-4 border-t border-border">
                                 <div>
                                     <span className="text-2xl font-bold text-primary">
-                                        {formatCurrency(order.totalAmount)}
+                                        {formatCurrency(order.totalCost)}
                                     </span>
                                     <span className="text-sm text-foreground/70 ml-2">
-                                        {order.items.length} item(s)
+                                        {order.order_items?.length || 0} item(s)
                                     </span>
                                 </div>
 
                                 <Link
                                     href={`/admin/orders/${order.id}`}
-                                    className="px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
+                                    className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
                                 >
                                     View Details
                                 </Link>
                             </div>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && !loading && (
+                <div className="flex justify-center gap-2 mt-6">
+                    <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-4 py-2 border border-border rounded-md disabled:opacity-50"
+                    >
+                        Previous
+                    </button>
+                    <span className="px-4 py-2">
+                        Page {page} of {totalPages}
+                    </span>
+                    <button
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={page === totalPages}
+                        className="px-4 py-2 border border-border rounded-md disabled:opacity-50"
+                    >
+                        Next
+                    </button>
                 </div>
             )}
         </div>

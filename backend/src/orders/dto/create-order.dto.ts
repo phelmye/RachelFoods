@@ -1,4 +1,4 @@
-import { IsString, IsArray, IsOptional, IsBoolean, IsEnum, IsDateString, ValidateNested, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsBoolean, IsEnum, IsDateString, IsNumber, Min, ValidateNested, MinLength, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderItemDto } from './order-item.dto';
 import { CustomOrderItemDto } from './custom-order-item.dto';
@@ -63,6 +63,18 @@ export class CreateOrderDto {
     // Payment method
     @IsEnum(PaymentMethod)
     paymentMethod: PaymentMethod;
+
+    // PHASE 5B: Coupon code (optional)
+    @IsOptional()
+    @IsString()
+    @MaxLength(50)
+    couponCode?: string;
+
+    // PHASE 5C: Wallet usage
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    useWalletAmount?: number;
 
     // Kitchen Refill specifics
     @IsOptional()

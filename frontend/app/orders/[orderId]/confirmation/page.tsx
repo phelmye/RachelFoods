@@ -3,6 +3,7 @@
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import Link from 'next/link';
+import BuyAgainButton from '@/components/BuyAgainButton';
 
 export default function OrderConfirmationPage({
     params,
@@ -45,6 +46,13 @@ export default function OrderConfirmationPage({
                         >
                             Continue Shopping
                         </Link>
+
+                        <div className="flex justify-center mt-4">
+                            <BuyAgainButton
+                                orderId={params.orderId}
+                                className="w-full max-w-md"
+                            />
+                        </div>
                     </div>
 
                     <div className="mt-12 p-6 bg-muted rounded-lg text-left">

@@ -8,11 +8,11 @@ async function updateProductImages() {
     console.log(`Found ${products.length} products to update`);
 
     for (const product of products) {
-        if (!product.images || product.images.length === 0) {
+        if (!product.imageUrl) {
             const imageUrl = `/products/${product.slug}.svg`;
             await prisma.products.update({
                 where: { id: product.id },
-                data: { images: [imageUrl] }
+                data: { imageUrl: imageUrl }
             });
             console.log(`✅ Updated ${product.name} with image: ${imageUrl}`);
         } else {

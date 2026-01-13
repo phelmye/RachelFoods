@@ -76,7 +76,7 @@ export class SeedController {
                         perishable: product.perishable || false,
                         categoryId: categoryMap[product.category],
                         status: ProductStatus.ACTIVE,
-                        images: [`/products/${slug}.svg`],
+                        imageUrl: `/products/${slug}.svg`,
                         updatedAt: new Date()
                     }
                 });

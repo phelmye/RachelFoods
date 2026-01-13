@@ -9,7 +9,7 @@ export default function AboutPage() {
 
             <main className="flex-1">
                 {/* Hero Section */}
-                <section className="bg-gradient-to-br from-primary/10 via-secondary/10 to-accent/10 py-20">
+                <section className="bg-linear-to-br from-primary/10 via-secondary/10 to-accent/10 py-20">
                     <div className="container mx-auto px-4 text-center">
                         <h1 className="text-5xl font-bold mb-6">About RachelFoods</h1>
                         <p className="text-xl text-foreground/70 max-w-3xl mx-auto">
@@ -89,7 +89,7 @@ export default function AboutPage() {
 
                         <div className="max-w-4xl mx-auto space-y-8">
                             <div className="flex gap-6">
-                                <div className="flex-shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
+                                <div className="shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
                                     1
                                 </div>
                                 <div>
@@ -102,7 +102,7 @@ export default function AboutPage() {
                             </div>
 
                             <div className="flex gap-6">
-                                <div className="flex-shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
+                                <div className="shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
                                     2
                                 </div>
                                 <div>
@@ -115,7 +115,7 @@ export default function AboutPage() {
                             </div>
 
                             <div className="flex gap-6">
-                                <div className="flex-shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
+                                <div className="shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
                                     3
                                 </div>
                                 <div>
@@ -128,7 +128,7 @@ export default function AboutPage() {
                             </div>
 
                             <div className="flex gap-6">
-                                <div className="flex-shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
+                                <div className="shrink-0 w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl">
                                     4
                                 </div>
                                 <div>

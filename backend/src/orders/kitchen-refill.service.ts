@@ -59,7 +59,7 @@ export class KitchenRefillService {
                             select: {
                                 id: true,
                                 name: true,
-                                images: true,
+                                imageUrl: true,
                             },
                         },
                         categories: true,

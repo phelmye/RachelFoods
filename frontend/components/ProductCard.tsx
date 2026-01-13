@@ -4,12 +4,13 @@ import { Product } from '@/lib/types';
 import Link from 'next/link';
 import Image from 'next/image';
 import { formatCurrency } from '@/lib/currency';
+import React from 'react';
 
 interface ProductCardProps {
     product: Product;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export const ProductCard = React.memo(function ProductCard({ product }: ProductCardProps) {
     // Defensive: Convert price to number if it's a string (backend Decimal)
     const price = typeof product.price === 'string' ? parseFloat(product.price) : product.price;
     const comparePrice = product.compareAtPrice
@@ -91,4 +92,4 @@ export function ProductCard({ product }: ProductCardProps) {
             </div>
         </Link>
     );
-}
+});

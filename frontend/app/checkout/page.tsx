@@ -1,11 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { PaymentIcons } from '@/components/PaymentIcons';
 import { formatCurrency } from '@/lib/currency';
 import { useRouter } from 'next/navigation';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import StripeCheckoutForm from '@/components/StripeCheckoutForm';
+import { api } from '@/lib/api';
+
+// Load Stripe with publishable key from environment
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
+
+type PaymentMethod = 'STRIPE' | 'COD';
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -18,17 +27,57 @@ export default function CheckoutPage() {
         zipCode: '',
         notes: '',
     });
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('COD');
+    const [clientSecret, setClientSecret] = useState<string | null>(null);
+    const [orderId, setOrderId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleCreateOrder = async (e: React.FormEvent) => {
         e.preventDefault();
+        setLoading(true);
+        setError(null);
 
-        // TODO: Create order with backend API
-        console.log('Creating order:', formData);
+        try {
+            // 1. Create order on backend
+            const orderData = {
+                deliveryAddress: formData.address,
+                deliveryCity: formData.city,
+                deliveryZipCode: formData.zipCode,
+                deliveryPhone: formData.phone,
+                deliveryNotes: formData.notes,
+                paymentMethod: paymentMethod === 'COD' ? 'COD' : 'PREPAID',
+                items: JSON.parse(localStorage.getItem('cart') || '[]'), // Cart items from localStorage
+            };
 
-        // Simulate order creation
-        const orderId = 'ORD-' + Date.now();
+            // Call your order creation API
+            const order = await api.createOrder(orderData as any);
+            setOrderId(order.id);
+
+            if (paymentMethod === 'STRIPE') {
+                // 2. Create Stripe PaymentIntent
+                const paymentIntentData = await api.createPaymentIntent({ orderId: order.id });
+                setClientSecret(paymentIntentData.clientSecret);
+            } else {
+                // COD: Mark as awaiting confirmation and redirect
+                await api.confirmCODOrder({ orderId: order.id });
+                localStorage.removeItem('cart');
+                router.push(`/orders/${order.id}/confirmation`);
+            }
+        } catch (err: any) {
+            console.error('Order creation failed:', err);
+            setError(err.message || 'Failed to create order. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePaymentSuccess = () => {
+        // Payment succeeded - clear cart and redirect
         localStorage.removeItem('cart');
-        router.push(`/orders/${orderId}/confirmation`);
+        if (orderId) {
+            router.push(`/orders/${orderId}/confirmation`);
+        }
     };
 
     return (
@@ -38,10 +87,16 @@ export default function CheckoutPage() {
             <main className="flex-1 container mx-auto px-4 py-8">
                 <h1 className="text-4xl font-bold mb-8">Checkout</h1>
 
+                {error && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+                        {error}
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Checkout Form */}
                     <div className="lg:col-span-2">
-                        <form onSubmit={handleSubmit} className="space-y-6">
+                        <form onSubmit={handleCreateOrder} className="space-y-6">
                             <div className="border border-border rounded-lg p-6 bg-background">
                                 <h2 className="text-2xl font-bold mb-4">Delivery Information</h2>
 
@@ -57,6 +112,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -71,6 +127,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -85,6 +142,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -99,6 +157,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -113,6 +172,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -127,6 +187,7 @@ export default function CheckoutPage() {
                                             onChange={(e) => setFormData({ ...formData, zipCode: e.target.value })}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             required
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
 
@@ -141,20 +202,80 @@ export default function CheckoutPage() {
                                             rows={3}
                                             className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                                             placeholder="Any special instructions for delivery..."
+                                            disabled={loading || !!clientSecret}
                                         />
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="border border-primary/20 rounded-lg p-6 bg-primary/5">
-                                <h3 className="font-semibold mb-2 flex items-center gap-2">
-                                    <span>ℹ️</span> Seller Confirmation Required
-                                </h3>
-                                <p className="text-sm text-foreground/70">
-                                    Your order will be reviewed and confirmed by the seller before payment is processed.
-                                    You'll receive a notification once the seller confirms availability and pricing.
-                                </p>
-                            </div>
+                            {/* Payment Method Selection */}
+                            {!clientSecret && (
+                                <div className="border border-border rounded-lg p-6 bg-background">
+                                    <h2 className="text-2xl font-bold mb-4">Payment Method</h2>
+
+                                    <div className="space-y-3">
+                                        <label className="flex items-start gap-3 p-4 border-2 border-border rounded-lg cursor-pointer hover:border-primary transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="paymentMethod"
+                                                value="COD"
+                                                checked={paymentMethod === 'COD'}
+                                                onChange={() => setPaymentMethod('COD')}
+                                                className="mt-1"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="font-semibold mb-1">Cash on Delivery (COD)</div>
+                                                <p className="text-sm text-foreground/70">
+                                                    Pay when you receive your order. Order will be confirmed by seller first.
+                                                </p>
+                                            </div>
+                                        </label>
+
+                                        <label className="flex items-start gap-3 p-4 border-2 border-border rounded-lg cursor-pointer hover:border-primary transition-colors">
+                                            <input
+                                                type="radio"
+                                                name="paymentMethod"
+                                                value="STRIPE"
+                                                checked={paymentMethod === 'STRIPE'}
+                                                onChange={() => setPaymentMethod('STRIPE')}
+                                                className="mt-1"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="font-semibold mb-1">Pay Now (Credit/Debit Card)</div>
+                                                <p className="text-sm text-foreground/70">
+                                                    Secure payment via Stripe. Your order will be confirmed instantly.
+                                                </p>
+                                                <div className="mt-2">
+                                                    <PaymentIcons />
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Stripe Payment Form */}
+                            {clientSecret && paymentMethod === 'STRIPE' && (
+                                <div className="border border-primary/20 rounded-lg p-6 bg-primary/5">
+                                    <h2 className="text-2xl font-bold mb-4">Complete Payment</h2>
+                                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                                        <StripeCheckoutForm
+                                            clientSecret={clientSecret}
+                                            onSuccess={handlePaymentSuccess}
+                                        />
+                                    </Elements>
+                                </div>
+                            )}
+
+                            {!clientSecret && (
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full py-3 bg-primary text-white rounded-lg font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+                                >
+                                    {loading ? 'Processing...' : paymentMethod === 'COD' ? 'Place Order (COD)' : 'Continue to Payment'}
+                                </button>
+                            )}
                         </form>
                     </div>
 
@@ -169,7 +290,7 @@ export default function CheckoutPage() {
                                     <span className="font-semibold">{formatCurrency(0)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-foreground/70">Tax</span>
+                                    <span className="text-foreground/70">Shipping</span>
                                     <span className="font-semibold">{formatCurrency(0)}</span>
                                 </div>
                                 <div className="border-t border-border pt-3 flex justify-between text-lg">
@@ -178,20 +299,11 @@ export default function CheckoutPage() {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={handleSubmit}
-                                className="w-full py-3 bg-primary text-white rounded-lg font-semibold hover:opacity-90 transition-opacity"
-                            >
-                                Place Order
-                            </button>
-
-                            <p className="text-xs text-foreground/60 mt-4 text-center">
-                                Payment will be processed after seller confirmation
-                            </p>
-
-                            <div className="mt-6 pt-6 border-t border-border">
-                                <PaymentIcons />
-                            </div>
+                            {paymentMethod === 'COD' && (
+                                <div className="text-sm text-foreground/70 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                    <strong>Note:</strong> Your order will be reviewed by the seller before confirmation.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -1,13 +1,38 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { json } from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true, // Enable raw body for Stripe webhooks
+  });
 
-  // Enable CORS for all origins (for debugging)
+  // Configure JSON middleware with raw body for webhook route
+  app.use('/api/payments/webhook', json({ verify: (req: any, res, buf) => { req.rawBody = buf; } }));
+
+  // Enable CORS with environment-based configuration
+  const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? [
+      'https://rachelfoods.com',
+      'https://www.rachelfoods.com',
+      // Add your production frontend URL here
+    ]
+    : [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+    ];
+
   app.enableCors({
-    origin: true,  // Allow all origins
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

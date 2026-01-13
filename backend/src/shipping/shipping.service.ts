@@ -1215,7 +1215,7 @@ export class ShippingService {
                                     select: {
                                         id: true,
                                         name: true,
-                                        images: true,
+                                        imageUrl: true,
                                     },
                                 },
                             },

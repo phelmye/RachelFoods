@@ -124,7 +124,7 @@ export class CategoryService {
                         slug: true,
                         price: true,
                         unit: true,
-                        images: true,
+                        imageUrl: true,
                     },
                 },
             },

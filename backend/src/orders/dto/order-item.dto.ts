@@ -4,6 +4,10 @@ export class OrderItemDto {
     @IsUUID()
     productId: string;
 
+    @IsOptional()
+    @IsUUID()
+    variantId?: string;
+
     @IsInt()
     @Min(1)
     quantity: number;

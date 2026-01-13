@@ -166,6 +166,29 @@ export class OrderController {
     }
 
     /**
+     * Get recent completed orders (for Buy Again)
+     * GET /orders/recent
+     */
+    @Get('recent')
+    @Permissions('order.view')
+    async getRecentOrders(@Request() req: any) {
+        return this.orderService.getRecentCompletedOrders(req.user.userId);
+    }
+
+    /**
+     * Reorder from a previous order
+     * POST /orders/reorder/:orderId
+     */
+    @Post('reorder/:orderId')
+    @Permissions('order.create')
+    async reorderFromPrevious(
+        @Param('orderId') orderId: string,
+        @Request() req: any,
+    ) {
+        return this.orderService.reorderFromPrevious(orderId, req.user.userId);
+    }
+
+    /**
      * Get custom items for a specific order
      * GET /orders/:id/custom-items
      */

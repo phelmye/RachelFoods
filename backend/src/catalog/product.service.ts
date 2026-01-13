@@ -1,30 +1,53 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class ProductService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private cache: CacheService,
+    ) { }
 
     /**
      * Transform product to include imageUrl from images array and variants
+     * PHASE 5A: Add stock visibility and low-stock indicators
      */
-    private transformProduct(product: any) {
+    private transformProduct(product: any, includeStockInfo = false) {
         if (!product) return product;
-        return {
+
+        const transformed: any = {
             ...product,
             imageUrl: product.images && product.images.length > 0 ? product.images[0] : null,
             variants: product.variants || [],
         };
+
+        // PHASE 5A: Add stock information for admin queries
+        if (includeStockInfo && product.variants) {
+            transformed.variants = product.variants.map((v: any) => ({
+                ...v,
+                isLowStock: v.stock <= 5 && v.stock > 0,
+                isOutOfStock: v.stock === 0,
+            }));
+
+            // Aggregate stock status
+            const totalStock = product.variants.reduce((sum: number, v: any) => sum + v.stock, 0);
+            transformed.totalStock = totalStock;
+            transformed.hasLowStock = product.variants.some((v: any) => v.stock <= 5 && v.stock > 0);
+            transformed.hasOutOfStock = product.variants.some((v: any) => v.stock === 0);
+        }
+
+        return transformed;
     }
 
     /**
      * Transform multiple products
      */
-    private transformProducts(products: any[]) {
-        return products.map(p => this.transformProduct(p));
+    private transformProducts(products: any[], includeStockInfo = false) {
+        return products.map(p => this.transformProduct(p, includeStockInfo));
     }
 
     /**
@@ -63,7 +86,7 @@ export class ProductService {
                 stock: createProductDto.stock ?? 0,
                 perishable: createProductDto.perishable ?? false,
                 categoryId: createProductDto.categoryId,
-                images: createProductDto.images ?? [],
+                imageUrl: createProductDto.images?.[0] ?? null,
                 createdBy: userId,
                 updatedAt: new Date(),
             },
@@ -75,11 +98,13 @@ export class ProductService {
 
     /**
      * Find all products (only active ones by default for buyers)
+     * PHASE 5A: Include stock information for admin users
      */
     async findAll(includeDisabled = false, includeArchived = false) {
         const statusFilter: ('DRAFT' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED')[] = [];
+        const isAdminQuery = includeDisabled || includeArchived;
 
-        if (includeDisabled || includeArchived) {
+        if (isAdminQuery) {
             // Admin/Store Owner view
             if (!includeArchived) {
                 statusFilter.push('DRAFT', 'ACTIVE', 'DISABLED');
@@ -113,12 +138,23 @@ export class ProductService {
                         { isDefault: 'desc' },
                         { createdAt: 'asc' },
                     ],
+                    select: {
+                        id: true,
+                        name: true,
+                        sku: true,
+                        price: true,
+                        stock: true,
+                        isDefault: true,
+                        isActive: true,
+                        createdAt: true,
+                        updatedAt: true,
+                    },
                 },
             },
             orderBy: [{ createdAt: 'desc' }],
         });
 
-        return this.transformProducts(products);
+        return this.transformProducts(products, isAdminQuery);
     }
 
     /**
@@ -250,17 +286,23 @@ export class ProductService {
             data.weight = new Decimal(updateProductDto.weight);
         }
 
-        return this.prisma.products.update({
+        const updated = await this.prisma.products.update({
             where: { id },
             data,
             include: {
                 category: true,
             },
         });
+
+        // PHASE 6A: Invalidate caches after update
+        this.invalidateProductCaches();
+
+        return updated;
     }
 
     /**
      * Disable a product (hide from buyers, mark as out of stock)
+     * PHASE 6A: Added cache invalidation
      */
     async disable(id: string) {
         const product = await this.prisma.products.findUnique({
@@ -271,10 +313,13 @@ export class ProductService {
             throw new NotFoundException(`Product with id '${id}' not found`);
         }
 
-        return this.prisma.products.update({
+        const updated = await this.prisma.products.update({
             where: { id },
             data: { status: 'DISABLED' },
         });
+
+        this.invalidateProductCaches();
+        return updated;
     }
 
     /**
@@ -369,11 +414,11 @@ export class ProductService {
             throw new NotFoundException(`Product with id '${id}' not found`);
         }
 
-        const updatedImages = [...product.images, ...imageUrls];
+        const newImageUrl = imageUrls[0]; // Use first image only
 
         return this.prisma.products.update({
             where: { id },
-            data: { images: updatedImages },
+            data: { imageUrl: newImageUrl },
         });
     }
 
@@ -389,11 +434,12 @@ export class ProductService {
             throw new NotFoundException(`Product with id '${id}' not found`);
         }
 
-        const updatedImages = product.images.filter((img) => img !== imageUrl);
+        // If removing the current image, set to null
+        const newImageUrl = product.imageUrl === imageUrl ? null : product.imageUrl;
 
         return this.prisma.products.update({
             where: { id },
-            data: { images: updatedImages },
+            data: { imageUrl: newImageUrl },
         });
     }
 
@@ -455,72 +501,94 @@ export class ProductService {
 
     /**
      * Find featured products
+     * PHASE 6A: Added caching with 5-minute TTL
      */
     async findFeatured() {
-        const products = await this.prisma.products.findMany({
-            where: {
-                deletedAt: null,
-                status: 'ACTIVE',
-                isFeatured: true,
-            },
-            include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        slug: true,
-                    },
-                },
-                variants: {
+        return this.cache.getOrSet(
+            'products:featured',
+            async () => {
+                const products = await this.prisma.products.findMany({
                     where: {
-                        isActive: true,
                         deletedAt: null,
+                        status: 'ACTIVE',
+                        isFeatured: true,
                     },
-                    orderBy: [
-                        { isDefault: 'desc' },
-                        { createdAt: 'asc' },
-                    ],
-                },
-            },
-            orderBy: [{ name: 'asc' }],
-            take: 8,
-        });
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                            },
+                        },
+                        variants: {
+                            where: {
+                                isActive: true,
+                                deletedAt: null,
+                            },
+                            orderBy: [
+                                { isDefault: 'desc' },
+                                { createdAt: 'asc' },
+                            ],
+                        },
+                    },
+                    orderBy: [{ name: 'asc' }],
+                    take: 8,
+                });
 
-        return this.transformProducts(products);
+                return this.transformProducts(products);
+            },
+            5 * 60 * 1000, // 5 minutes
+        );
     }
 
     /**
      * Find popular products (by order count)
+     * PHASE 6A: Added caching with 5-minute TTL
      */
     async findPopular(limit = 6) {
-        const products = await this.prisma.products.findMany({
-            where: {
-                deletedAt: null,
-                status: 'ACTIVE',
-            },
-            include: {
-                category: {
-                    select: {
-                        id: true,
-                        name: true,
-                        slug: true,
-                    },
-                },
-                variants: {
+        return this.cache.getOrSet(
+            `products:popular:${limit}`,
+            async () => {
+                const products = await this.prisma.products.findMany({
                     where: {
-                        isActive: true,
                         deletedAt: null,
+                        status: 'ACTIVE',
                     },
-                    orderBy: [
-                        { isDefault: 'desc' },
-                        { createdAt: 'asc' },
-                    ],
-                },
-            },
-            orderBy: [{ orderCount: 'desc' }, { name: 'asc' }],
-            take: limit,
-        });
+                    include: {
+                        category: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                            },
+                        },
+                        variants: {
+                            where: {
+                                isActive: true,
+                                deletedAt: null,
+                            },
+                            orderBy: [
+                                { isDefault: 'desc' },
+                                { createdAt: 'asc' },
+                            ],
+                        },
+                    },
+                    orderBy: [{ orderCount: 'desc' }, { name: 'asc' }],
+                    take: limit,
+                });
 
-        return this.transformProducts(products);
+                return this.transformProducts(products);
+            },
+            5 * 60 * 1000, // 5 minutes
+        );
+    }
+
+    /**
+     * Invalidate product caches
+     * PHASE 6A: Call this when products are created/updated/deleted
+     */
+    invalidateProductCaches() {
+        this.cache.deletePattern('^products:');
     }
 }

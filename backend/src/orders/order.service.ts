@@ -16,6 +16,9 @@ import { ConfirmOrderDto } from './dto/confirm-order.dto';
 import { ShippingEngine } from './shipping/shipping.engine';
 import { NotificationService } from './notification.service';
 import { ReviewService } from '../reviews/review.service';
+import { OrderEmailHelper } from './order-email.helper';
+import { PromotionService } from '../promotion/promotion.service';
+import { WalletService } from '../wallet/wallet.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
@@ -26,6 +29,9 @@ export class OrderService {
         private prisma: PrismaService,
         private shippingEngine: ShippingEngine,
         private notificationService: NotificationService,
+        private orderEmailHelper: OrderEmailHelper,
+        private promotionService: PromotionService,
+        private walletService: WalletService,
         @Inject(forwardRef(() => ReviewService))
         private reviewService: ReviewService,
         private eventEmitter: EventEmitter2,
@@ -50,142 +56,344 @@ export class OrderService {
      * Create a new order
      */
     async create(createOrderDto: CreateOrderDto, buyerId: string) {
-        // Validate products exist and are active
-        const productIds = createOrderDto.items.map((item) => item.productId);
-        const products = await this.prisma.products.findMany({
-            where: {
-                id: { in: productIds },
-                deletedAt: null,
-            },
-            include: { category: true },
-        });
-
-        if (products.length !== productIds.length) {
-            throw new BadRequestException('Some products not found or unavailable');
-        }
-
-        // Check if any products are inactive
-        const inactiveProducts = products.filter((p) => p.status !== 'ACTIVE');
-        if (inactiveProducts.length > 0) {
-            throw new BadRequestException(
-                `Products not available: ${inactiveProducts.map((p) => p.name).join(', ')}`,
-            );
-        }
-
-        // Calculate order totals
-        let subtotal = new Decimal(0);
-        let totalWeight = new Decimal(0);
-        let hasPerishableItems = false;
-
-        const orderItemsData = createOrderDto.items.map((item) => {
-            const product = products.find((p) => p.id === item.productId)!;
-            const itemSubtotal = product.price.mul(item.quantity);
-            const itemWeight = product.weight.mul(item.quantity);
-
-            subtotal = subtotal.add(itemSubtotal);
-            totalWeight = totalWeight.add(itemWeight);
-
-            if (product.perishable) {
-                hasPerishableItems = true;
-            }
-
-            return {
-                id: crypto.randomUUID(),
-                productId: product.id,
-                categoryId: product.categoryId,
-                productName: product.name,
-                productPrice: product.price,
-                productWeight: product.weight,
-                productUnit: product.unit,
-                quantity: item.quantity,
-                subtotal: itemSubtotal,
-            };
-        });
-
-        // Calculate shipping cost
-        // TODO: Calculate actual distance from buyer address to store
-        const estimatedDistance = 15; // Placeholder - should calculate from addresses
-
-        const shippingResult = await this.shippingEngine.calculateShipping(
-            estimatedDistance,
-            parseFloat(totalWeight.toString()),
-            hasPerishableItems,
-        );
-
-        const shippingCost = new Decimal(shippingResult.shippingCost);
-        const totalCost = subtotal.add(shippingCost);
-
-        // Generate order number
-        const orderNumber = await this.generateOrderNumber();
-
-        // Create order with items
-        const order = await this.prisma.orders.create({
-            data: {
-                id: crypto.randomUUID(),
-                orderNumber,
-                buyerId,
-                deliveryAddress: createOrderDto.deliveryAddress,
-                deliveryCity: createOrderDto.deliveryCity,
-                deliveryState: createOrderDto.deliveryState,
-                deliveryZipCode: createOrderDto.deliveryZipCode,
-                deliveryPhone: createOrderDto.deliveryPhone,
-                deliveryNotes: createOrderDto.deliveryNotes,
-                subtotal,
-                updatedAt: new Date(),
-                shippingCost,
-                totalCost,
-                totalWeight,
-                distance: new Decimal(estimatedDistance),
-                shippingProvider: shippingResult.selectedProvider,
-                paymentMethod: createOrderDto.paymentMethod,
-                isKitchenRefill: createOrderDto.isKitchenRefill || false,
-                refillType: createOrderDto.refillType,
-                refillStartDate: createOrderDto.refillStartDate
-                    ? new Date(createOrderDto.refillStartDate)
-                    : null,
-                refillEndDate: createOrderDto.refillEndDate
-                    ? new Date(createOrderDto.refillEndDate)
-                    : null,
-                eventDescription: createOrderDto.eventDescription,
-                order_items: {
-                    create: orderItemsData,
+        // PHASE 5A: Use transaction for atomic stock deduction
+        return await this.prisma.$transaction(async (tx) => {
+            // Validate products exist and are active
+            const productIds = createOrderDto.items.map((item) => item.productId);
+            const products = await tx.products.findMany({
+                where: {
+                    id: { in: productIds },
+                    deletedAt: null,
                 },
-                custom_order_items: createOrderDto.customItems
-                    ? {
-                        create: createOrderDto.customItems.map((item) => ({
-                            id: crypto.randomUUID(),
-                            itemName: item.itemName,
-                            description: item.description,
-                            quantity: item.quantity,
-                            unit: item.unit,
-                            estimatedPrice: item.estimatedPrice
-                                ? new Decimal(item.estimatedPrice)
-                                : null,
-                        })),
-                    }
-                    : undefined,
-            },
-            include: {
-                order_items: {
-                    include: {
-                        products: true,
-                        categories: true,
+                include: {
+                    category: true,
+                    variants: {
+                        where: { isActive: true },
                     },
                 },
-                custom_order_items: true,
-                users: true,
-            },
+            });
+
+            if (products.length !== productIds.length) {
+                throw new BadRequestException('Some products not found or unavailable');
+            }
+
+            // Check if any products are inactive
+            const inactiveProducts = products.filter((p) => p.status !== 'ACTIVE');
+            if (inactiveProducts.length > 0) {
+                throw new BadRequestException(
+                    `Products not available: ${inactiveProducts.map((p) => p.name).join(', ')}`,
+                );
+            }
+
+            // PHASE 5A: Validate variant stock BEFORE calculating totals
+            for (const item of createOrderDto.items) {
+                if (item.variantId) {
+                    const product = products.find((p) => p.id === item.productId);
+                    const variant = product?.variants.find((v) => v.id === item.variantId);
+
+                    if (!variant) {
+                        throw new BadRequestException(
+                            `Product variant not found or inactive for ${product?.name || 'product'}`,
+                        );
+                    }
+
+                    if (variant.stock < item.quantity) {
+                        throw new BadRequestException(
+                            `Insufficient stock for ${product.name} (${variant.name}). Available: ${variant.stock}, Requested: ${item.quantity}`,
+                        );
+                    }
+                }
+            }
+
+            // Calculate order totals
+            let subtotal = new Decimal(0);
+            let totalWeight = new Decimal(0);
+            let hasPerishableItems = false;
+
+            const orderItemsData = createOrderDto.items.map((item) => {
+                const product = products.find((p) => p.id === item.productId)!;
+
+                // Use variant price if variant selected, otherwise product price
+                let itemPrice = product.price;
+                let variantName = null;
+                if (item.variantId) {
+                    const variant = product.variants.find((v) => v.id === item.variantId);
+                    if (variant) {
+                        itemPrice = variant.price;
+                        variantName = variant.name;
+                    }
+                }
+
+                const itemSubtotal = itemPrice.mul(item.quantity);
+                const itemWeight = product.weight.mul(item.quantity);
+
+                subtotal = subtotal.add(itemSubtotal);
+                totalWeight = totalWeight.add(itemWeight);
+
+                if (product.perishable) {
+                    hasPerishableItems = true;
+                }
+
+                return {
+                    id: crypto.randomUUID(),
+                    productId: product.id,
+                    variantId: item.variantId || null,
+                    categoryId: product.categoryId,
+                    productName: product.name,
+                    variantName: variantName,
+                    productPrice: itemPrice,
+                    productWeight: product.weight,
+                    productUnit: product.unit,
+                    quantity: item.quantity,
+                    subtotal: itemSubtotal,
+                };
+            });
+
+            // Calculate shipping cost
+            // TODO: Calculate actual distance from buyer address to store
+            const estimatedDistance = 15; // Placeholder - should calculate from addresses
+
+            const shippingResult = await this.shippingEngine.calculateShipping(
+                estimatedDistance,
+                parseFloat(totalWeight.toString()),
+                hasPerishableItems,
+            );
+
+            const shippingCost = new Decimal(shippingResult.shippingCost);
+
+            // PHASE 5B: Validate and apply coupon if provided
+            let discountAmount = new Decimal(0);
+            let couponCode: string | null = null;
+            if (createOrderDto.couponCode) {
+                const validation = await this.promotionService.validateCoupon(
+                    createOrderDto.couponCode,
+                    parseFloat(subtotal.toString()),
+                );
+
+                if (validation.isValid && validation.discountAmount > 0) {
+                    discountAmount = new Decimal(validation.discountAmount);
+                    couponCode = createOrderDto.couponCode;
+                    this.logger.log({
+                        event: 'coupon_applied',
+                        couponCode,
+                        discountAmount: validation.discountAmount,
+                        orderSubtotal: parseFloat(subtotal.toString()),
+                    });
+                } else {
+                    this.logger.warn({
+                        event: 'coupon_validation_failed',
+                        couponCode: createOrderDto.couponCode,
+                        error: validation.error,
+                    });
+                    throw new BadRequestException(
+                        validation.error || 'Invalid coupon code',
+                    );
+                }
+            }
+
+            // PHASE 5C: Validate and apply wallet credit
+            let walletUsed = new Decimal(0);
+            if (createOrderDto.useWalletAmount && createOrderDto.useWalletAmount > 0) {
+                // Get user's wallet balance
+                const walletBalance = await this.walletService.getBalance(buyerId);
+
+                if (walletBalance < createOrderDto.useWalletAmount) {
+                    throw new BadRequestException(
+                        `Insufficient wallet balance. Available: $${walletBalance.toFixed(2)}, Requested: $${createOrderDto.useWalletAmount.toFixed(2)}`,
+                    );
+                }
+
+                // Wallet can only be used up to the order total after discounts
+                const orderTotalAfterDiscount = subtotal.add(shippingCost).sub(discountAmount);
+                const maxWalletUsable = parseFloat(orderTotalAfterDiscount.toString());
+
+                if (createOrderDto.useWalletAmount > maxWalletUsable) {
+                    throw new BadRequestException(
+                        `Wallet amount cannot exceed order total. Maximum usable: $${maxWalletUsable.toFixed(2)}`,
+                    );
+                }
+
+                walletUsed = new Decimal(createOrderDto.useWalletAmount);
+
+                this.logger.log({
+                    event: 'wallet_will_be_applied',
+                    buyerId,
+                    walletAmount: createOrderDto.useWalletAmount,
+                    orderTotal: maxWalletUsable,
+                });
+            }
+
+            const totalCost = subtotal.add(shippingCost).sub(discountAmount).sub(walletUsed);
+
+            // Generate order number
+            const orderNumber = await this.generateOrderNumber();
+
+            // Create order with items
+            const order = await tx.orders.create({
+                data: {
+                    id: crypto.randomUUID(),
+                    orderNumber,
+                    buyerId,
+                    deliveryAddress: createOrderDto.deliveryAddress,
+                    deliveryCity: createOrderDto.deliveryCity,
+                    deliveryState: createOrderDto.deliveryState,
+                    deliveryZipCode: createOrderDto.deliveryZipCode,
+                    deliveryPhone: createOrderDto.deliveryPhone,
+                    deliveryNotes: createOrderDto.deliveryNotes,
+                    subtotal,
+                    updatedAt: new Date(),
+                    shippingCost,
+                    discountAmount, // PHASE 5B: Store discount
+                    couponCode, // PHASE 5B: Store coupon code
+                    walletUsed, // PHASE 5C: Store wallet amount used
+                    totalCost,
+                    totalWeight,
+                    distance: new Decimal(estimatedDistance),
+                    shippingProvider: shippingResult.selectedProvider,
+                    paymentMethod: createOrderDto.paymentMethod,
+                    isKitchenRefill: createOrderDto.isKitchenRefill || false,
+                    refillType: createOrderDto.refillType,
+                    refillStartDate: createOrderDto.refillStartDate
+                        ? new Date(createOrderDto.refillStartDate)
+                        : null,
+                    refillEndDate: createOrderDto.refillEndDate
+                        ? new Date(createOrderDto.refillEndDate)
+                        : null,
+                    eventDescription: createOrderDto.eventDescription,
+                    order_items: {
+                        create: orderItemsData,
+                    },
+                    custom_order_items: createOrderDto.customItems
+                        ? {
+                            create: createOrderDto.customItems.map((item) => ({
+                                id: crypto.randomUUID(),
+                                itemName: item.itemName,
+                                description: item.description,
+                                quantity: item.quantity,
+                                unit: item.unit,
+                                estimatedPrice: item.estimatedPrice
+                                    ? new Decimal(item.estimatedPrice)
+                                    : null,
+                            })),
+                        }
+                        : undefined,
+                },
+                include: {
+                    order_items: {
+                        include: {
+                            products: true,
+                            categories: true,
+                        },
+                    },
+                    custom_order_items: true,
+                    users: true,
+                },
+            });
+
+            // PHASE 5A: Atomically deduct stock for variants
+            // Use updateMany with WHERE condition to prevent negative stock
+            for (const item of createOrderDto.items) {
+                if (item.variantId) {
+                    const updateResult = await tx.product_variants.updateMany({
+                        where: {
+                            id: item.variantId,
+                            stock: { gte: item.quantity }, // Only update if stock sufficient
+                        },
+                        data: {
+                            stock: { decrement: item.quantity },
+                            updatedAt: new Date(),
+                        },
+                    });
+
+                    // If update didn't affect any rows, stock was insufficient (race condition)
+                    if (updateResult.count === 0) {
+                        const product = products.find(p => p.id === item.productId);
+                        const variant = product?.variants.find(v => v.id === item.variantId);
+                        throw new BadRequestException(
+                            `Stock depleted for ${product?.name} (${variant?.name}). Please try again.`,
+                        );
+                    }
+
+                    this.logger.log({
+                        event: 'stock_deducted',
+                        orderId: order.id,
+                        variantId: item.variantId,
+                        quantity: item.quantity,
+                    });
+                }
+            }
+
+            return order;
+        }).then(async (order) => {
+            // PHASE 5C: Debit wallet after successful order
+            if (parseFloat(order.walletUsed.toString()) > 0) {
+                try {
+                    await this.walletService.debitWallet(
+                        order.buyerId,
+                        parseFloat(order.walletUsed.toString()),
+                        'ORDER_PAYMENT',
+                        order.id,
+                        {
+                            orderNumber: order.orderNumber,
+                            orderTotal: parseFloat(order.totalCost.toString()) + parseFloat(order.walletUsed.toString()),
+                            walletUsed: parseFloat(order.walletUsed.toString()),
+                        },
+                    );
+
+                    this.logger.log({
+                        event: 'wallet_debited',
+                        buyerId: order.buyerId,
+                        orderId: order.id,
+                        walletAmount: parseFloat(order.walletUsed.toString()),
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        event: 'wallet_debit_failed',
+                        buyerId: order.buyerId,
+                        orderId: order.id,
+                        error: error.message,
+                    });
+                    // Note: Order already created, but wallet not debited
+                    // This should trigger an admin alert
+                }
+            }
+
+            // PHASE 5B: Increment coupon usage after successful order
+            if (order.couponCode) {
+                try {
+                    await this.promotionService.incrementCouponUsage(order.couponCode);
+                    this.logger.log({
+                        event: 'coupon_usage_incremented',
+                        couponCode: order.couponCode,
+                        orderId: order.id,
+                    });
+                } catch (error) {
+                    this.logger.error({
+                        event: 'coupon_increment_failed',
+                        couponCode: order.couponCode,
+                        orderId: order.id,
+                        error: error.message,
+                    });
+                }
+            }
+
+            // Post-transaction notifications (outside transaction for performance)
+            await this.notificationService.notifyOrderPlaced(
+                order.users.email,
+                order.users.phone || order.deliveryPhone,
+                order.orderNumber,
+                parseFloat(order.totalCost.toString()),
+            );
+
+            // PHASE 4B: Send order created email (non-blocking)
+            try {
+                await this.orderEmailHelper.sendOrderCreatedEmail(order.id);
+            } catch (error) {
+                this.logger.warn(`Failed to send order created email for ${order.id}: ${error.message}`);
+            }
+
+            return order;
         });
-
-        // Send notifications
-        await this.notificationService.notifyOrderPlaced(
-            order.users.email,
-            order.users.phone || order.deliveryPhone,
-            order.orderNumber,
-            parseFloat(order.totalCost.toString()),
-        );
-
-        return order;
     }
 
     /**
@@ -234,7 +442,7 @@ export class OrderService {
                                 id: true,
                                 name: true,
                                 slug: true,
-                                images: true,
+                                imageUrl: true,
                             },
                         },
                     },
@@ -521,6 +729,15 @@ export class OrderService {
         const buyerEmail = updatedOrder.users.email;
         const buyerPhone = updatedOrder.users.phone || updatedOrder.deliveryPhone;
 
+        // PHASE 4B: Send order status email (non-blocking)
+        if (updateDto.status && updateDto.status !== currentStatus) {
+            try {
+                await this.orderEmailHelper.sendOrderStatusEmail(updatedOrder.id, updateDto.status);
+            } catch (error) {
+                this.logger.warn(`Failed to send order status email for ${updatedOrder.id}: ${error.message}`);
+            }
+        }
+
         if (updateDto.status === 'SHIPPING') {
             await this.notificationService.notifyOrderShipped(
                 buyerEmail,
@@ -620,6 +837,275 @@ export class OrderService {
             },
             userId,
         );
+    }
+
+    /**
+     * Get recent completed orders for Buy Again
+     * Returns last 5 completed orders
+     */
+    async getRecentCompletedOrders(userId: string) {
+        const orders = await this.prisma.orders.findMany({
+            where: {
+                buyerId: userId,
+                status: 'COMPLETED',
+            },
+            include: {
+                order_items: {
+                    include: {
+                        products: {
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                imageUrl: true,
+                                price: true,
+                                status: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: {
+                completedAt: 'desc',
+            },
+            take: 5,
+        });
+
+        return orders;
+    }
+
+    /**
+     * Reorder from a previous order
+     * Creates a new order with same items (using current prices)
+     */
+    async reorderFromPrevious(orderId: string, userId: string) {
+        // PHASE 5A: Use transaction for atomic stock validation and deduction
+        return await this.prisma.$transaction(async (tx) => {
+            // Get original order
+            const originalOrder = await tx.orders.findUnique({
+                where: { id: orderId },
+                include: {
+                    order_items: {
+                        include: {
+                            products: true,
+                            variant: true,
+                        },
+                    },
+                },
+            });
+
+            if (!originalOrder) {
+                throw new NotFoundException('Order not found');
+            }
+
+            // Verify user owns the order
+            if (originalOrder.buyerId !== userId) {
+                throw new ForbiddenException('You can only reorder your own orders');
+            }
+
+            // Check if order was completed
+            if (originalOrder.status !== 'COMPLETED') {
+                throw new BadRequestException('Can only reorder from completed orders');
+            }
+
+            // Get user's default address
+            const defaultAddress = await tx.addresses.findFirst({
+                where: {
+                    userId,
+                    isDefault: true,
+                },
+            });
+
+            if (!defaultAddress) {
+                throw new BadRequestException(
+                    'Please set a default delivery address before reordering',
+                );
+            }
+
+            // Validate products are still available
+            const productIds = originalOrder.order_items.map((item) => item.productId);
+            const products = await tx.products.findMany({
+                where: {
+                    id: { in: productIds },
+                    status: 'ACTIVE',
+                    deletedAt: null,
+                },
+                include: {
+                    category: true,
+                    variants: {
+                        where: { isActive: true },
+                    },
+                },
+            });
+
+            if (products.length === 0) {
+                throw new BadRequestException('None of the original products are available');
+            }
+
+            // PHASE 5A: Validate stock BEFORE calculating totals
+            for (const originalItem of originalOrder.order_items) {
+                if (originalItem.variantId) {
+                    const product = products.find((p) => p.id === originalItem.productId);
+                    const variant = product?.variants.find((v) => v.id === originalItem.variantId);
+
+                    if (variant && variant.stock < originalItem.quantity) {
+                        throw new BadRequestException(
+                            `Insufficient stock for ${product?.name} (${variant.name}). Available: ${variant.stock}, Requested: ${originalItem.quantity}`,
+                        );
+                    }
+                }
+            }
+
+            // Calculate new totals with CURRENT prices (never reuse old prices)
+            let subtotal = new Decimal(0);
+            let totalWeight = new Decimal(0);
+
+            const orderItemsData = [];
+            const unavailableItems = [];
+
+            for (const originalItem of originalOrder.order_items) {
+                const product = products.find((p) => p.id === originalItem.productId);
+
+                if (!product) {
+                    unavailableItems.push(originalItem.productName);
+                    continue;
+                }
+
+                // Get current price (from variant or product)
+                let currentPrice = product.price;
+                let variantId = null;
+
+                if (originalItem.variantId) {
+                    const variant = product.variants.find(
+                        (v) => v.id === originalItem.variantId && v.isActive,
+                    );
+                    if (variant) {
+                        currentPrice = variant.price;
+                        variantId = variant.id;
+                    } else {
+                        unavailableItems.push(
+                            `${originalItem.productName} (${originalItem.variantName})`,
+                        );
+                        continue;
+                    }
+                }
+
+                const itemSubtotal = currentPrice.mul(originalItem.quantity);
+                const itemWeight = product.weight.mul(originalItem.quantity);
+
+                subtotal = subtotal.add(itemSubtotal);
+                totalWeight = totalWeight.add(itemWeight);
+
+                orderItemsData.push({
+                    id: crypto.randomUUID(),
+                    productId: product.id,
+                    variantId: variantId,
+                    categoryId: product.categoryId,
+                    productName: product.name,
+                    variantName: originalItem.variantName,
+                    productPrice: currentPrice,
+                    productWeight: product.weight,
+                    productUnit: product.unit,
+                    quantity: originalItem.quantity,
+                    subtotal: itemSubtotal,
+                });
+            }
+
+            if (orderItemsData.length === 0) {
+                throw new BadRequestException(
+                    'All items from the original order are no longer available',
+                );
+            }
+
+            // Calculate shipping
+            // TODO: Calculate actual distance from buyer address to store
+            const estimatedDistance = 15; // Placeholder
+            const hasPerishableItems = orderItemsData.some(
+                (item) => products.find((p) => p.id === item.productId)?.perishable,
+            );
+
+            const shippingResult = await this.shippingEngine.calculateShipping(
+                estimatedDistance,
+                Number(totalWeight),
+                hasPerishableItems,
+            );
+
+            const shippingCost = new Decimal(shippingResult.shippingCost);
+            const totalCost = subtotal.add(shippingCost);
+
+            // Generate order number
+            const orderNumber = await this.generateOrderNumber();
+
+            // Create new order
+            const newOrder = await tx.orders.create({
+                data: {
+                    id: crypto.randomUUID(),
+                    orderNumber,
+                    buyerId: userId,
+                    deliveryAddress: defaultAddress.street,
+                    deliveryCity: defaultAddress.city,
+                    deliveryState: defaultAddress.state,
+                    deliveryZipCode: defaultAddress.zip,
+                    deliveryPhone: '', // Should come from user profile
+                    deliveryNotes: null,
+                    subtotal,
+                    shippingCost,
+                    totalCost,
+                    totalWeight,
+                    distance: shippingResult.distance || null,
+                    shippingProvider: shippingResult.selectedProvider || null,
+                    paymentMethod: originalOrder.paymentMethod,
+                    status: 'PENDING',
+                    paymentStatus: 'PENDING',
+                    updatedAt: new Date(),
+                    order_items: {
+                        create: orderItemsData,
+                    },
+                },
+                include: {
+                    order_items: true,
+                },
+            });
+
+            // PHASE 5A: Atomically deduct stock for variants
+            for (const item of orderItemsData) {
+                if (item.variantId) {
+                    const updateResult = await tx.product_variants.updateMany({
+                        where: {
+                            id: item.variantId,
+                            stock: { gte: item.quantity },
+                        },
+                        data: {
+                            stock: { decrement: item.quantity },
+                            updatedAt: new Date(),
+                        },
+                    });
+
+                    if (updateResult.count === 0) {
+                        const product = products.find(p => p.id === item.productId);
+                        throw new BadRequestException(
+                            `Stock depleted for ${product?.name}. Please try again.`,
+                        );
+                    }
+                }
+            }
+
+            // Log warning about unavailable items if any
+            if (unavailableItems.length > 0) {
+                this.logger.warn(
+                    `Reorder ${newOrder.id}: Some items unavailable: ${unavailableItems.join(', ')}`,
+                );
+            }
+
+            return {
+                order: newOrder,
+                unavailableItems,
+                message:
+                    unavailableItems.length > 0
+                        ? `Order created, but ${unavailableItems.length} item(s) were unavailable`
+                        : 'Order created successfully',
+            };
+        });
     }
 
     /**

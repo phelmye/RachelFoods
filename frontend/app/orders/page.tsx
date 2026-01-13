@@ -6,6 +6,7 @@ import { Footer } from '@/components/Footer';
 import { formatCurrency } from '@/lib/currency';
 import Link from 'next/link';
 import { Order } from '@/lib/types';
+import BuyAgainButton from '@/components/BuyAgainButton';
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
@@ -88,14 +89,12 @@ export default function OrdersPage() {
                                     >
                                         View Details
                                     </Link>
-                                    <button
-                                        onClick={() => {
-                                            alert('Reorder feature coming soon! Your order items will be added to cart.');
+                                    <BuyAgainButton
+                                        orderId={order.id}
+                                        onSuccess={(newOrderId) => {
+                                            window.location.href = `/checkout?orderId=${newOrderId}`;
                                         }}
-                                        className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
-                                    >
-                                        🔄 Reorder
-                                    </button>
+                                    />
                                 </div>
                             </div>
                         ))}

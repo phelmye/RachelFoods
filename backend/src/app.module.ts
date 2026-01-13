@@ -10,6 +10,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
+import { CacheModule } from './cache/cache.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfileModule } from './profile/profile.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -23,6 +24,14 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { WithdrawalModule } from './withdrawals/withdrawal.module';
 import { FinancialOpsModule } from './financial-ops/financial-ops.module';
 import { ThemeModule } from './theme/theme.module';
+import { AdminModule } from './admin/admin.module';
+import { RefillModule } from './refill/refill.module';
+import { AddressModule } from './address/address.module';
+import { EmailModule } from './email/email.module';
+import { NotificationModule } from './notifications/notification.module';
+import { PromotionModule } from './promotion/promotion.module';
+import { WalletModule } from './wallet/wallet.module';
+import { RefundModule } from './refunds/refund.module';
 
 @Module({
     imports: [
@@ -38,6 +47,7 @@ import { ThemeModule } from './theme/theme.module';
         // Structured logging with Winston
         WinstonModule.forRoot(loggerConfig),
         PrismaModule,
+        CacheModule, // PHASE 6A: Global cache module
         AuthModule,
         ProfileModule,
         CatalogModule,
@@ -51,6 +61,14 @@ import { ThemeModule } from './theme/theme.module';
         WithdrawalModule,
         FinancialOpsModule,
         ThemeModule,
+        AdminModule,
+        RefillModule,
+        AddressModule,
+        EmailModule,
+        NotificationModule,
+        PromotionModule, // PHASE 5B: Coupon management
+        WalletModule, // PHASE 5C: Store credit & loyalty wallet
+        RefundModule, // PHASE 5C: Refund processing
     ],
     controllers: [AppController],
     providers: [
