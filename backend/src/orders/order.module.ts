@@ -38,6 +38,6 @@ import { WalletModule } from '../wallet/wallet.module';
         ThirdPartyShippingProvider,
         CustomShippingProvider,
     ],
-    exports: [OrderService, KitchenRefillService, NotificationService],
+    exports: [OrderService, KitchenRefillService, NotificationService, OrderEmailHelper],
 })
 export class OrderModule { }
