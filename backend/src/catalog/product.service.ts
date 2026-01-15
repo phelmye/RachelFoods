@@ -347,186 +347,6 @@ export class ProductService {
      * Publish a product (transition from DRAFT to ACTIVE with validation)
      * 
      * Lifecycle State Enforcement:
-     * - DRAFT: Admin-only, not visible to buyers (initial state)
-     * - ACTIVE: Visible in public catalog (requires validation)
-     * - DISABLED: Hidden from buyers, admin can still see
-     * - ARCHIVED: Historical reference only
-     * 
-     * Validation Rules:
-     * 1. Product must have at least one image
-     * 2. Product price must be > 0
-     * 3. Product must have at least one active variant (if using variants system)
-     * 4. Product cannot already be deleted
-     * 
-     * @param id - Product ID to publish
-     * @returns Published product with diagnostic information
-     * @throws BadRequestException if validation fails
-     * @throws NotFoundException if product doesn't exist
-     */
-    async publishProduct(id: string) {
-        // Fetch product with variants
-        const product = await this.prisma.products.findUnique({
-            where: { id },
-            include: {
-                variants: {
-                    where: {
-                        isActive: true,
-                        deletedAt: null,
-                    },
-                },
-                category: true,
-            },
-        });
-
-        if (!product || product.deletedAt) {
-            throw new NotFoundException(`Product with id '${id}' not found`);
-        }
-
-        // Validation: Check if product is already active
-        if (product.status === 'ACTIVE') {
-            return {
-                ...product,
-                message: 'Product is already published',
-                publishedAt: product.updatedAt,
-            };
-        }
-
-        // Validation diagnostics
-        const validationIssues: string[] = [];
-
-        // 1. Validate at least one image exists
-        if (!product.imageUrl) {
-            validationIssues.push('Product must have at least one image');
-        }
-
-        // 2. Validate price > 0
-        if (product.price.toNumber() <= 0) {
-            validationIssues.push('Product price must be greater than 0');
-        }
-
-        // 3. Validate at least one active variant exists (if using variants)
-        // Note: Some products might not use variants, so this is optional
-        if (product.variants && product.variants.length === 0) {
-            // This is a warning, not a blocker - simple products don't need variants
-            console.warn(`Product ${id} has no active variants. This may be intentional for simple products.`);
-        }
-
-        // 4. Validate product has a category (recommended but not required)
-        if (!product.categoryId) {
-            validationIssues.push('Product should have a category assigned (recommended)');
-        }
-
-        // Throw if there are validation issues
-        if (validationIssues.length > 0) {
-            throw new BadRequestException({
-                message: 'Product cannot be published due to validation errors',
-                issues: validationIssues,
-                productId: id,
-                productName: product.name,
-            });
-        }
-
-        // All validations passed - publish the product
-        const published = await this.prisma.products.update({
-            where: { id },
-            data: {
-                status: 'ACTIVE',
-                updatedAt: new Date(),
-            },
-            include: {
-                category: true,
-                variants: {
-                    where: {
-                        isActive: true,
-                        deletedAt: null,
-                    },
-                },
-            },
-        });
-
-        // Invalidate product caches so the product appears immediately
-        this.invalidateProductCaches();
-
-        return {
-            ...published,
-            message: 'Product successfully published and is now visible to buyers',
-            publishedAt: published.updatedAt,
-        };
-    }
-
-    /**
-     * Get product visibility diagnostics (admin-only)
-     * 
-     * Helps admins understand why a product is not visible in the catalog.
-     * 
-     * @param id - Product ID to diagnose
-     * @returns Diagnostic information about product visibility
-     */
-    async getProductVisibilityDiagnostics(id: string) {
-        const product = await this.prisma.products.findUnique({
-            where: { id },
-            include: {
-                variants: true,
-                category: true,
-            },
-        });
-
-        if (!product) {
-            throw new NotFoundException(`Product with id '${id}' not found`);
-        }
-
-        const diagnostics: any = {
-            productId: id,
-            productName: product.name,
-            isVisibleToBuyers: false,
-            reasons: [],
-            status: product.status,
-            hasImage: !!product.imageUrl,
-            price: product.price.toNumber(),
-            stock: product.stock,
-            categoryId: product.categoryId,
-            categoryName: product.category?.name || null,
-            variantCount: product.variants?.length || 0,
-            activeVariantCount: product.variants?.filter(v => v.isActive && !v.deletedAt).length || 0,
-        };
-
-        // Check visibility blockers
-        if (product.deletedAt) {
-            diagnostics.reasons.push('Product is soft-deleted');
-        }
-
-        if (product.status !== 'ACTIVE') {
-            diagnostics.reasons.push(`Product status is '${product.status}' (must be 'ACTIVE' for public visibility)`);
-        }
-
-        if (!product.imageUrl) {
-            diagnostics.reasons.push('Product has no image');
-        }
-
-        if (product.price.toNumber() <= 0) {
-            diagnostics.reasons.push('Product price is 0 or negative');
-        }
-
-        const activeVariants = product.variants?.filter(v => v.isActive && !v.deletedAt) || [];
-        if (product.variants && product.variants.length > 0 && activeVariants.length === 0) {
-            diagnostics.reasons.push('Product has variants but none are active');
-        }
-
-        // Determine if product is visible
-        diagnostics.isVisibleToBuyers =
-            !product.deletedAt &&
-            product.status === 'ACTIVE' &&
-            diagnostics.reasons.length === 0;
-
-        if (diagnostics.isVisibleToBuyers) {
-            diagnostics.message = 'Product is visible to buyers in the catalog';
-        } else {
-            diagnostics.message = 'Product is NOT visible to buyers. See reasons below.';
-        }
-
-        return diagnostics;
-    }
-
     /**
      * Archive a product (historical reference only)
      */
@@ -777,5 +597,351 @@ export class ProductService {
      */
     invalidateProductCaches() {
         this.cache.deletePattern('^products:');
+    }
+
+    /**
+     * Get impact preview for product actions
+     * Shows how many orders and merchandising visibility would be affected
+     */
+    async getImpactPreview(id: string) {
+        const product = await this.prisma.products.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                isFeatured: true,
+                orderCount: true,
+            },
+        });
+
+        if (!product || product.status === 'ARCHIVED') {
+            throw new NotFoundException(`Product with id '${id}' not found or archived`);
+        }
+
+        // Count active orders containing this product
+        const activeOrders = await this.prisma.order_items.count({
+            where: {
+                productId: id,
+                orders: {
+                    status: {
+                        in: ['PENDING', 'CONFIRMED', 'PAID', 'PREPARING', 'SHIPPING'],
+                    },
+                },
+            },
+        });
+
+        // Check if product is in featured or popular lists
+        const isFeatured = product.isFeatured;
+        const isPopular = product.orderCount > 0;
+
+        return {
+            productId: id,
+            productName: product.name,
+            currentStatus: product.status,
+            activeOrdersAffected: activeOrders,
+            isFeatured,
+            isPopular,
+            warnings: [
+                activeOrders > 0 && 'This product has active orders in progress',
+                isFeatured && 'This product is featured on the homepage',
+                isPopular && 'This product appears in popular products list',
+            ].filter(Boolean),
+        };
+    }
+
+    /**
+     * Disable a product (temporarily hide from catalog)
+     * Requires confirmation if product is ACTIVE and has warnings
+     */
+    async disableProduct(id: string, confirmed = false) {
+        const product = await this.prisma.products.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                deletedAt: true,
+            },
+        });
+
+        if (!product || product.deletedAt) {
+            throw new NotFoundException(`Product with id '${id}' not found`);
+        }
+
+        if (product.status === 'ARCHIVED') {
+            throw new BadRequestException('Cannot disable an archived product');
+        }
+
+        if (product.status === 'DISABLED') {
+            return {
+                message: 'Product is already disabled',
+                product,
+            };
+        }
+
+        // Get impact preview for warnings
+        const impact = await this.getImpactPreview(id);
+
+        // Require confirmation if product is ACTIVE and has impact
+        if (product.status === 'ACTIVE' && !confirmed && impact.warnings.length > 0) {
+            throw new BadRequestException({
+                message: 'Confirmation required to disable this ACTIVE product',
+                requiresConfirmation: true,
+                impact,
+                hint: 'Add ?confirmed=true to proceed',
+            });
+        }
+
+        // Disable the product
+        const disabled = await this.prisma.products.update({
+            where: { id },
+            data: {
+                status: 'DISABLED',
+                updatedAt: new Date(),
+            },
+            include: {
+                category: true,
+            },
+        });
+
+        // Invalidate caches
+        this.invalidateProductCaches();
+
+        return {
+            message: 'Product successfully disabled',
+            product: this.transformProduct(disabled),
+            impact,
+        };
+    }
+
+    /**
+     * Archive a product (historical reference, not sellable)
+     * Blocked if product has active orders
+     */
+    async archiveProduct(id: string, confirmed = false) {
+        const product = await this.prisma.products.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                deletedAt: true,
+            },
+        });
+
+        if (!product || product.deletedAt) {
+            throw new NotFoundException(`Product with id '${id}' not found`);
+        }
+
+        if (product.status === 'ARCHIVED') {
+            return {
+                message: 'Product is already archived',
+                product,
+            };
+        }
+
+        // Get impact preview
+        const impact = await this.getImpactPreview(id);
+
+        // BLOCK archiving if there are active orders
+        if (impact.activeOrdersAffected > 0) {
+            throw new BadRequestException({
+                message: 'Cannot archive product with active orders',
+                blocked: true,
+                impact,
+                hint: 'Wait for active orders to complete or cancel them first',
+            });
+        }
+
+        // Require confirmation for ACTIVE products
+        if (product.status === 'ACTIVE' && !confirmed) {
+            throw new BadRequestException({
+                message: 'Confirmation required to archive this ACTIVE product',
+                requiresConfirmation: true,
+                impact,
+                hint: 'Add ?confirmed=true to proceed',
+            });
+        }
+
+        // Archive the product
+        const archived = await this.prisma.products.update({
+            where: { id },
+            data: {
+                status: 'ARCHIVED',
+                updatedAt: new Date(),
+            },
+            include: {
+                category: true,
+            },
+        });
+
+        // Invalidate caches
+        this.invalidateProductCaches();
+
+        return {
+            message: 'Product successfully archived',
+            product: this.transformProduct(archived),
+            impact,
+        };
+    }
+
+    /**
+     * Publish a product with enhanced validation and soft warnings
+     * Hard validation: image, price > 0, category
+     * Soft warnings: low stock, no featured image
+     */
+    async publishProduct(id: string) {
+        const product = await this.prisma.products.findUnique({
+            where: { id },
+            include: {
+                category: true,
+                variants: {
+                    where: {
+                        deletedAt: null,
+                    },
+                },
+            },
+        });
+
+        if (!product || product.deletedAt) {
+            throw new NotFoundException(`Product with id '${id}' not found`);
+        }
+
+        if (product.status === 'ARCHIVED') {
+            throw new BadRequestException('Cannot publish an archived product');
+        }
+
+        if (product.status === 'ACTIVE') {
+            return {
+                message: 'Product is already published',
+                product: this.transformProduct(product),
+                warnings: [],
+            };
+        }
+
+        // Hard validation (blocking)
+        const validationIssues: string[] = [];
+
+        if (!product.imageUrl) {
+            validationIssues.push('Product must have at least one image');
+        }
+
+        if (product.price.toNumber() <= 0) {
+            validationIssues.push('Product price must be greater than 0');
+        }
+
+        if (!product.categoryId) {
+            validationIssues.push('Product should have a category assigned');
+        }
+
+        if (validationIssues.length > 0) {
+            throw new BadRequestException({
+                message: 'Product does not meet publishing requirements',
+                issues: validationIssues,
+                hint: 'Fix these issues before publishing',
+            });
+        }
+
+        // Soft warnings (non-blocking)
+        const warnings: string[] = [];
+
+        // Check for low stock
+        const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+        if (totalStock === 0) {
+            warnings.push('Product has zero stock - buyers will see "Out of Stock"');
+        } else if (totalStock <= 5) {
+            warnings.push(`Product has low stock (${totalStock} units)`);
+        }
+
+        // Check if product has featured image (placeholder vs real image)
+        if (product.imageUrl && product.imageUrl.includes('placeholder')) {
+            warnings.push('Product is using a placeholder image - consider uploading a real product photo');
+        }
+
+        // Publish the product
+        const published = await this.prisma.products.update({
+            where: { id },
+            data: {
+                status: 'ACTIVE',
+                updatedAt: new Date(),
+            },
+            include: {
+                category: true,
+                variants: {
+                    where: {
+                        isActive: true,
+                        deletedAt: null,
+                    },
+                },
+            },
+        });
+
+        // Invalidate caches
+        this.invalidateProductCaches();
+
+        return {
+            message: 'Product successfully published',
+            product: this.transformProduct(published),
+            warnings,
+            publishedAt: new Date().toISOString(),
+        };
+    }
+
+    /**
+     * Get product visibility diagnostics (admin troubleshooting)
+     */
+    async getProductVisibilityDiagnostics(id: string) {
+        const product = await this.prisma.products.findUnique({
+            where: { id },
+            include: {
+                category: true,
+                variants: {
+                    where: {
+                        deletedAt: null,
+                    },
+                },
+            },
+        });
+
+        if (!product) {
+            throw new NotFoundException(`Product with id '${id}' not found`);
+        }
+
+        const isVisibleToBuyers = product.status === 'ACTIVE' && !product.deletedAt;
+
+        const reasons: string[] = [];
+        if (product.status !== 'ACTIVE') {
+            reasons.push(`Product status is '${product.status}' (must be 'ACTIVE' for public visibility)`);
+        }
+        if (product.deletedAt) {
+            reasons.push('Product is soft-deleted');
+        }
+        if (!product.imageUrl) {
+            reasons.push('Product has no image');
+        }
+        if (product.price.toNumber() <= 0) {
+            reasons.push('Product price is not set or is zero');
+        }
+
+        const activeVariants = product.variants.filter(v => v.isActive && !v.deletedAt);
+
+        return {
+            productId: id,
+            productName: product.name,
+            isVisibleToBuyers,
+            message: isVisibleToBuyers
+                ? 'Product is visible to buyers'
+                : 'Product is NOT visible to buyers. See reasons below.',
+            reasons,
+            status: product.status,
+            hasImage: !!product.imageUrl,
+            price: product.price,
+            stock: product.stock,
+            categoryId: product.categoryId,
+            categoryName: product.category?.name,
+            variantCount: product.variants.length,
+            activeVariantCount: activeVariants.length,
+        };
     }
 }

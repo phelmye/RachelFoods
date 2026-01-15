@@ -42,9 +42,12 @@ export class ProductController {
 
     @Patch(':id/disable')
     @UseGuards(JwtAuthGuard, PermissionsGuard)
-    @Permissions('product.disable')
-    disable(@Param('id') id: string) {
-        return this.productService.disable(id);
+    @Permissions('product.update')
+    disableProduct(
+        @Param('id') id: string,
+        @Query('confirmed', new ParseBoolPipe({ optional: true })) confirmed?: boolean,
+    ) {
+        return this.productService.disableProduct(id, confirmed ?? false);
     }
 
     @Patch(':id/enable')
@@ -68,11 +71,21 @@ export class ProductController {
         return this.productService.getProductVisibilityDiagnostics(id);
     }
 
+    @Get(':id/impact-preview')
+    @UseGuards(JwtAuthGuard, PermissionsGuard)
+    @Permissions('product.view')
+    getImpactPreview(@Param('id') id: string) {
+        return this.productService.getImpactPreview(id);
+    }
+
     @Patch(':id/archive')
     @UseGuards(JwtAuthGuard, PermissionsGuard)
     @Permissions('product.delete')
-    archive(@Param('id') id: string) {
-        return this.productService.archive(id);
+    archiveProduct(
+        @Param('id') id: string,
+        @Query('confirmed', new ParseBoolPipe({ optional: true })) confirmed?: boolean,
+    ) {
+        return this.productService.archiveProduct(id, confirmed ?? false);
     }
 
     @Delete(':id')
