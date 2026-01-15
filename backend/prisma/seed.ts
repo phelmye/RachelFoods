@@ -310,10 +310,12 @@ async function main() {
             description: 'Fresh green spinach leaves, perfect for soups and stews',
             price: 8.99,
             stock: 50,
+            unit: 'bunch',
+            weight: 0.5,
             categoryId: createdCategories['vegetables'].id,
             imageUrl: 'https://images.unsplash.com/photo-1576045057995-568f588f82fb',
             isFeatured: true,
-            isActive: true,
+            status: 'ACTIVE',
         },
         {
             name: 'Dried Okra',
@@ -321,10 +323,12 @@ async function main() {
             description: 'Sun-dried okra for traditional dishes',
             price: 12.50,
             stock: 30,
+            unit: 'lb',
+            weight: 1.0,
             categoryId: createdCategories['vegetables'].id,
             imageUrl: 'https://images.unsplash.com/photo-1595853035070-59a39fe84de5',
             isFeatured: false,
-            isActive: true,
+            status: 'ACTIVE',
         },
         // Grains & Legumes
         {
@@ -333,10 +337,12 @@ async function main() {
             description: 'Premium long grain rice, perfect for jollof and fried rice',
             price: 15.99,
             stock: 100,
+            unit: 'bag',
+            weight: 5.0,
             categoryId: createdCategories['grains'].id,
             imageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c',
             isFeatured: true,
-            isActive: true,
+            status: 'ACTIVE',
         },
         {
             name: 'Black-Eyed Peas (2lb)',
@@ -344,10 +350,12 @@ async function main() {
             description: 'High-quality black-eyed peas for traditional bean dishes',
             price: 9.99,
             stock: 75,
+            unit: 'bag',
+            weight: 2.0,
             categoryId: createdCategories['grains'].id,
             imageUrl: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5',
             isFeatured: false,
-            isActive: true,
+            status: 'ACTIVE',
         },
         // Spices & Seasonings
         {
@@ -356,10 +364,12 @@ async function main() {
             description: 'Authentic ground crayfish for traditional seasoning',
             price: 18.50,
             stock: 40,
+            unit: 'oz',
+            weight: 0.75,
             categoryId: createdCategories['spices'].id,
             imageUrl: 'https://images.unsplash.com/photo-1596097635667-9e21e9eb524f',
             isFeatured: true,
-            isActive: true,
+            status: 'ACTIVE',
         },
         {
             name: 'Curry Powder Blend',
@@ -367,10 +377,12 @@ async function main() {
             description: 'Traditional curry powder blend with authentic spices',
             price: 10.99,
             stock: 60,
+            unit: 'oz',
+            weight: 0.5,
             categoryId: createdCategories['spices'].id,
             imageUrl: 'https://images.unsplash.com/photo-1599909533540-dd3e992610a6',
             isFeatured: false,
-            isActive: true,
+            status: 'ACTIVE',
         },
         // Oils & Condiments
         {
@@ -379,10 +391,12 @@ async function main() {
             description: 'Pure red palm oil for authentic African cooking',
             price: 22.99,
             stock: 45,
+            unit: 'bottle',
+            weight: 2.0,
             categoryId: createdCategories['oils'].id,
             imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5',
             isFeatured: true,
-            isActive: true,
+            status: 'ACTIVE',
         },
         {
             name: 'Groundnut Oil (1L)',
@@ -390,10 +404,12 @@ async function main() {
             description: 'Pure groundnut (peanut) oil for frying and cooking',
             price: 16.50,
             stock: 55,
+            unit: 'bottle',
+            weight: 2.2,
             categoryId: createdCategories['oils'].id,
             imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5',
             isFeatured: false,
-            isActive: true,
+            status: 'ACTIVE',
         },
         // Snacks
         {
@@ -402,10 +418,12 @@ async function main() {
             description: 'Crispy fried plantain chips, lightly salted',
             price: 7.99,
             stock: 80,
+            unit: 'bag',
+            weight: 0.5,
             categoryId: createdCategories['snacks'].id,
             imageUrl: 'https://images.unsplash.com/photo-1621939514649-280e2ee25f60',
             isFeatured: true,
-            isActive: true,
+            status: 'ACTIVE',
         },
         {
             name: 'Chin Chin',
@@ -413,10 +431,12 @@ async function main() {
             description: 'Traditional crunchy fried dough snack',
             price: 9.50,
             stock: 65,
+            unit: 'bag',
+            weight: 0.75,
             categoryId: createdCategories['snacks'].id,
             imageUrl: 'https://images.unsplash.com/photo-1599785209707-a456fc1337bb',
             isFeatured: false,
-            isActive: true,
+            status: 'ACTIVE',
         },
     ];
 
@@ -427,7 +447,13 @@ async function main() {
         });
 
         if (!existing) {
-            await prisma.products.create({ data: product });
+            await prisma.products.create({
+                data: {
+                    ...product,
+                    id: crypto.randomUUID(),
+                    updatedAt: new Date(),
+                },
+            });
             productsCreated++;
             console.log(`  ✓ ${product.name}`);
         } else {
