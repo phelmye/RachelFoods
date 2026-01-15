@@ -1,0 +1,587 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { CouponService } from '../src/coupons/coupon.service';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Decimal } from '@prisma/client/runtime/library';
+
+/**
+ * PHASE 9A: Coupon Validation Tests
+ * 
+ * Critical invariants:
+ * 1. Expired coupons cannot be applied
+ * 2. Usage limits are enforced
+ * 3. Minimum order amount respected
+ * 4. Single-use coupons can only be used once per user
+ * 5. Discount calculation never exceeds order total
+ */
+describe('CouponService - Validation', () => {
+    let service: CouponService;
+    let prisma: PrismaService;
+
+    const mockPrisma = {
+        coupons: {
+            findUnique: jest.fn(),
+            update: jest.fn(),
+            findMany: jest.fn(),
+        },
+        coupon_usages: {
+            findFirst: jest.fn(),
+            create: jest.fn(),
+            count: jest.fn(),
+        },
+        $transaction: jest.fn((callback) => callback(mockPrisma)),
+    };
+
+    beforeEach(async () => {
+        const module: TestingModule = await Test.createTestingModule({
+            providers: [
+                CouponService,
+                {
+                    provide: PrismaService,
+                    useValue: mockPrisma,
+                },
+            ],
+        }).compile();
+
+        service = module.get<CouponService>(CouponService);
+        prisma = module.get<PrismaService>(PrismaService);
+
+        jest.clearAllMocks();
+    });
+
+    describe('Expiry Validation', () => {
+        it('should accept valid non-expired coupon', async () => {
+            // Arrange
+            const futureDate = new Date();
+            futureDate.setDate(futureDate.getDate() + 30); // 30 days from now
+
+            const coupon = {
+                id: 'coupon-1',
+                code: 'SAVE10',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(10),
+                expiresAt: futureDate,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 5,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.validateCoupon('SAVE10', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+
+        it('should reject expired coupon', async () => {
+            // Arrange
+            const pastDate = new Date();
+            pastDate.setDate(pastDate.getDate() - 1); // Yesterday
+
+            const coupon = {
+                id: 'coupon-1',
+                code: 'EXPIRED',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(10),
+                expiresAt: pastDate,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 5,
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('EXPIRED', 'user-1', 50.0)
+            ).rejects.toThrow('Coupon has expired');
+        });
+
+        it('should accept coupon without expiry date', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'NOEXPIRY',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(10),
+                expiresAt: null, // Never expires
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.validateCoupon('NOEXPIRY', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+    });
+
+    describe('Usage Limit Validation', () => {
+        it('should accept coupon under usage limit', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'LIMITED',
+                discountType: 'FIXED',
+                discountValue: new Decimal(5),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 50, // 50/100 used
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.validateCoupon('LIMITED', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+
+        it('should reject coupon at usage limit', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'MAXED',
+                discountType: 'FIXED',
+                discountValue: new Decimal(5),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 100, // At limit
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('MAXED', 'user-1', 50.0)
+            ).rejects.toThrow('Coupon usage limit reached');
+        });
+
+        it('should reject coupon exceeding usage limit', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'EXCEEDED',
+                discountType: 'FIXED',
+                discountValue: new Decimal(5),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 50,
+                usageCount: 75, // Somehow exceeded (data integrity issue)
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('EXCEEDED', 'user-1', 50.0)
+            ).rejects.toThrow('Coupon usage limit reached');
+        });
+
+        it('should accept coupon with no usage limit', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'UNLIMITED',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null, // No limit
+                usageCount: 9999,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.validateCoupon('UNLIMITED', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+    });
+
+    describe('Minimum Order Amount', () => {
+        it('should accept order meeting minimum amount', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'MIN50',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(50), // Minimum $50
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act - Order total exactly $50
+            const result = await service.validateCoupon('MIN50', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+
+        it('should accept order exceeding minimum amount', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'MIN50',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(50),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act - Order total $75 (above minimum)
+            const result = await service.validateCoupon('MIN50', 'user-1', 75.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+
+        it('should reject order below minimum amount', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'MIN50',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(50),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // Act & Assert - Order total $30 (below minimum)
+            await expect(
+                service.validateCoupon('MIN50', 'user-1', 30.0)
+            ).rejects.toThrow('Order does not meet minimum amount of $50');
+        });
+
+        it('should handle zero minimum order amount', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'NOMIN',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0), // No minimum
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act - Even $1 order should work
+            const result = await service.validateCoupon('NOMIN', 'user-1', 1.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+    });
+
+    describe('Single-Use Per User', () => {
+        it('should allow first-time use of coupon', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'FIRSTTIME',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 10,
+                singleUsePerUser: true,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null); // No prior usage
+
+            // Act
+            const result = await service.validateCoupon('FIRSTTIME', 'user-1', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+
+        it('should reject second use by same user', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'FIRSTTIME',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 10,
+                singleUsePerUser: true,
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue({
+                id: 'usage-1',
+                couponId: 'coupon-1',
+                userId: 'user-1',
+                usedAt: new Date(),
+            });
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('FIRSTTIME', 'user-1', 50.0)
+            ).rejects.toThrow('Coupon already used by this user');
+        });
+
+        it('should allow different users to use single-use coupon', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'FIRSTTIME',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 1,
+                singleUsePerUser: true,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // User-2 hasn't used it yet
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.validateCoupon('FIRSTTIME', 'user-2', 50.0);
+
+            // Assert
+            expect(result.isValid).toBe(true);
+        });
+    });
+
+    describe('Discount Calculation', () => {
+        it('should calculate percentage discount correctly', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'SAVE20',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(20), // 20%
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.calculateDiscount('SAVE20', 100.0);
+
+            // Assert
+            expect(result.discountAmount).toBe(20.0); // 20% of $100
+            expect(result.finalTotal).toBe(80.0); // $100 - $20
+        });
+
+        it('should calculate fixed discount correctly', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'SAVE10',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10), // $10 off
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.calculateDiscount('SAVE10', 50.0);
+
+            // Assert
+            expect(result.discountAmount).toBe(10.0);
+            expect(result.finalTotal).toBe(40.0); // $50 - $10
+        });
+
+        it('should never discount more than order total', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'BIG50',
+                discountType: 'FIXED',
+                discountValue: new Decimal(50), // $50 off
+                expiresAt: null,
+                isActive: true,
+                usageLimit: null,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act - Order total only $30
+            const result = await service.calculateDiscount('BIG50', 30.0);
+
+            // Assert - Discount capped at order total
+            expect(result.discountAmount).toBe(30.0); // Not $50
+            expect(result.finalTotal).toBe(0); // Can't go negative
+        });
+
+        it('should cap percentage discount at 100%', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'FREE100',
+                discountType: 'PERCENTAGE',
+                discountValue: new Decimal(100), // 100% off
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 1,
+                usageCount: 0,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.findFirst.mockResolvedValue(null);
+
+            // Act
+            const result = await service.calculateDiscount('FREE100', 75.0);
+
+            // Assert
+            expect(result.discountAmount).toBe(75.0);
+            expect(result.finalTotal).toBe(0); // Free order
+        });
+    });
+
+    describe('Inactive Coupons', () => {
+        it('should reject inactive coupon', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'INACTIVE',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: false, // Deactivated
+                usageLimit: null,
+                usageCount: 0,
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('INACTIVE', 'user-1', 50.0)
+            ).rejects.toThrow('Coupon is not active');
+        });
+    });
+
+    describe('Nonexistent Coupons', () => {
+        it('should reject non-existent coupon code', async () => {
+            // Arrange
+            mockPrisma.coupons.findUnique.mockResolvedValue(null);
+
+            // Act & Assert
+            await expect(
+                service.validateCoupon('NOTEXIST', 'user-1', 50.0)
+            ).rejects.toThrow(NotFoundException);
+        });
+    });
+
+    describe('Usage Recording', () => {
+        it('should record coupon usage when applied', async () => {
+            // Arrange
+            const coupon = {
+                id: 'coupon-1',
+                code: 'SAVE10',
+                discountType: 'FIXED',
+                discountValue: new Decimal(10),
+                expiresAt: null,
+                isActive: true,
+                usageLimit: 100,
+                usageCount: 50,
+                minOrderAmount: new Decimal(0),
+            };
+
+            mockPrisma.coupons.findUnique.mockResolvedValue(coupon);
+            mockPrisma.coupon_usages.create.mockResolvedValue({
+                id: 'usage-1',
+                couponId: 'coupon-1',
+                userId: 'user-1',
+                orderId: 'order-1',
+                usedAt: new Date(),
+            });
+
+            mockPrisma.coupons.update.mockResolvedValue({
+                ...coupon,
+                usageCount: 51,
+            });
+
+            // Act
+            await service.recordUsage('coupon-1', 'user-1', 'order-1');
+
+            // Assert
+            expect(mockPrisma.coupon_usages.create).toHaveBeenCalledWith({
+                data: {
+                    couponId: 'coupon-1',
+                    userId: 'user-1',
+                    orderId: 'order-1',
+                },
+            });
+
+            expect(mockPrisma.coupons.update).toHaveBeenCalledWith({
+                where: { id: 'coupon-1' },
+                data: {
+                    usageCount: {
+                        increment: 1,
+                    },
+                },
+            });
+        });
+    });
+});
