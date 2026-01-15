@@ -41,7 +41,39 @@ export function Footer() {
             </div>
 
             {/* Footer Links */}
-            <div className="container mx-auto px-4 py-8">\n                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">\n                    <div>\n                        <h3 className="font-bold text-lg mb-4 text-primary">RachelFoods</h3>\n                        <p className="text-sm text-foreground/70">\n                            Human-assisted food commerce platform with seller confirmation workflow\n                        </p>\n                    </div>\n\n                    <div>\n                        <h4 className="font-semibold mb-4">Shop</h4>\n                        <ul className="space-y-2 text-sm">\n                            <li><Link href="/catalog" className="hover:text-primary transition-colors">All Products</Link></li>\n                            <li><Link href="/catalog?featured=true" className="hover:text-primary transition-colors">Featured</Link></li>\n                        </ul>\n                    </div>\n\n                    <div>\n                        <h4 className="font-semibold mb-4">Account</h4>\n                        <ul className="space-y-2 text-sm">\n                            <li><Link href="/orders" className="hover:text-primary transition-colors">My Orders</Link></li>\n                            <li><Link href="/profile" className="hover:text-primary transition-colors">Profile</Link></li>\n                        </ul>\n                    </div>\n\n                    <div>\n                        <h4 className="font-semibold mb-4">Support</h4>\n                        <ul className="space-y-2 text-sm">\n                            <li><Link href="/help" className="hover:text-primary transition-colors">Help Center</Link></li>\n                            <li><Link href="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>\n                        </ul>\n                    </div>\n                </div>
+            <div className="container mx-auto px-4 py-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                    <div>
+                        <h3 className="font-bold text-lg mb-4 text-primary">RachelFoods</h3>
+                        <p className="text-sm text-foreground/70">
+                            Human-assisted food commerce platform with seller confirmation workflow
+                        </p>
+                    </div>
+
+                    <div>
+                        <h4 className="font-semibold mb-4">Shop</h4>
+                        <ul className="space-y-2 text-sm">
+                            <li><Link href="/catalog" className="hover:text-primary transition-colors">All Products</Link></li>
+                            <li><Link href="/catalog?featured=true" className="hover:text-primary transition-colors">Featured</Link></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 className="font-semibold mb-4">Account</h4>
+                        <ul className="space-y-2 text-sm">
+                            <li><Link href="/orders" className="hover:text-primary transition-colors">My Orders</Link></li>
+                            <li><Link href="/profile" className="hover:text-primary transition-colors">Profile</Link></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 className="font-semibold mb-4">Support</h4>
+                        <ul className="space-y-2 text-sm">
+                            <li><Link href="/help" className="hover:text-primary transition-colors">Help Center</Link></li>
+                            <li><Link href="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>
+                        </ul>
+                    </div>
+                </div>
 
                 <div className="mt-8 pt-8 border-t border-border">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-4">

@@ -278,6 +278,171 @@ async function main() {
     console.log(`  • Role-Permission Assignments: ${assignmentCount}`);
 
     console.log('\n✅ RBAC seed completed successfully!\n');
+
+    // 5. Create sample categories
+    console.log('\n📁 Creating sample categories...');
+    const sampleCategories = [
+        { name: 'Vegetables', slug: 'vegetables', description: 'Fresh and dry vegetables' },
+        { name: 'Grains & Legumes', slug: 'grains', description: 'Rice, beans, and pulses' },
+        { name: 'Spices & Seasonings', slug: 'spices', description: 'Traditional spices and seasonings' },
+        { name: 'Oils & Condiments', slug: 'oils', description: 'Cooking oils and sauces' },
+        { name: 'Snacks', slug: 'snacks', description: 'Traditional snacks and treats' },
+    ];
+
+    const createdCategories: Record<string, any> = {};
+    for (const category of sampleCategories) {
+        const upsertedCategory = await prisma.categories.upsert({
+            where: { slug: category.slug },
+            update: category,
+            create: category,
+        });
+        createdCategories[category.slug] = upsertedCategory;
+        console.log(`  ✓ ${category.name}`);
+    }
+
+    // 6. Create sample products
+    console.log('\n🛒 Creating sample products...');
+    const sampleProducts = [
+        // Vegetables
+        {
+            name: 'Fresh Spinach',
+            slug: 'fresh-spinach',
+            description: 'Fresh green spinach leaves, perfect for soups and stews',
+            price: 8.99,
+            stock: 50,
+            categoryId: createdCategories['vegetables'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1576045057995-568f588f82fb',
+            isFeatured: true,
+            isActive: true,
+        },
+        {
+            name: 'Dried Okra',
+            slug: 'dried-okra',
+            description: 'Sun-dried okra for traditional dishes',
+            price: 12.50,
+            stock: 30,
+            categoryId: createdCategories['vegetables'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1595853035070-59a39fe84de5',
+            isFeatured: false,
+            isActive: true,
+        },
+        // Grains & Legumes
+        {
+            name: 'Long Grain Rice (5lb)',
+            slug: 'long-grain-rice-5lb',
+            description: 'Premium long grain rice, perfect for jollof and fried rice',
+            price: 15.99,
+            stock: 100,
+            categoryId: createdCategories['grains'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c',
+            isFeatured: true,
+            isActive: true,
+        },
+        {
+            name: 'Black-Eyed Peas (2lb)',
+            slug: 'black-eyed-peas-2lb',
+            description: 'High-quality black-eyed peas for traditional bean dishes',
+            price: 9.99,
+            stock: 75,
+            categoryId: createdCategories['grains'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1615485290382-441e4d049cb5',
+            isFeatured: false,
+            isActive: true,
+        },
+        // Spices & Seasonings
+        {
+            name: 'Ground Crayfish',
+            slug: 'ground-crayfish',
+            description: 'Authentic ground crayfish for traditional seasoning',
+            price: 18.50,
+            stock: 40,
+            categoryId: createdCategories['spices'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1596097635667-9e21e9eb524f',
+            isFeatured: true,
+            isActive: true,
+        },
+        {
+            name: 'Curry Powder Blend',
+            slug: 'curry-powder-blend',
+            description: 'Traditional curry powder blend with authentic spices',
+            price: 10.99,
+            stock: 60,
+            categoryId: createdCategories['spices'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1599909533540-dd3e992610a6',
+            isFeatured: false,
+            isActive: true,
+        },
+        // Oils & Condiments
+        {
+            name: 'Palm Oil (32oz)',
+            slug: 'palm-oil-32oz',
+            description: 'Pure red palm oil for authentic African cooking',
+            price: 22.99,
+            stock: 45,
+            categoryId: createdCategories['oils'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5',
+            isFeatured: true,
+            isActive: true,
+        },
+        {
+            name: 'Groundnut Oil (1L)',
+            slug: 'groundnut-oil-1l',
+            description: 'Pure groundnut (peanut) oil for frying and cooking',
+            price: 16.50,
+            stock: 55,
+            categoryId: createdCategories['oils'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5',
+            isFeatured: false,
+            isActive: true,
+        },
+        // Snacks
+        {
+            name: 'Plantain Chips',
+            slug: 'plantain-chips',
+            description: 'Crispy fried plantain chips, lightly salted',
+            price: 7.99,
+            stock: 80,
+            categoryId: createdCategories['snacks'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1621939514649-280e2ee25f60',
+            isFeatured: true,
+            isActive: true,
+        },
+        {
+            name: 'Chin Chin',
+            slug: 'chin-chin',
+            description: 'Traditional crunchy fried dough snack',
+            price: 9.50,
+            stock: 65,
+            categoryId: createdCategories['snacks'].id,
+            imageUrl: 'https://images.unsplash.com/photo-1599785209707-a456fc1337bb',
+            isFeatured: false,
+            isActive: true,
+        },
+    ];
+
+    let productsCreated = 0;
+    for (const product of sampleProducts) {
+        const existing = await prisma.products.findUnique({
+            where: { slug: product.slug },
+        });
+
+        if (!existing) {
+            await prisma.products.create({ data: product });
+            productsCreated++;
+            console.log(`  ✓ ${product.name}`);
+        } else {
+            console.log(`  ⊙ ${product.name} (already exists)`);
+        }
+    }
+
+    console.log('\n📊 Final Summary:');
+    const categoryCount = await prisma.categories.count();
+    const productCount = await prisma.products.count();
+    console.log(`  • Categories: ${categoryCount}`);
+    console.log(`  • Products: ${productCount}`);
+    console.log(`  • New products added: ${productsCreated}`);
+
+    console.log('\n✅ Database seed completed successfully!\n');
 }
 
 main()
