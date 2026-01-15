@@ -38,7 +38,7 @@ export const api = {
 
     // Categories
     getCategories: async () => {
-        const res = await fetch(`${API_BASE}/categories`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/categories`, { next: { revalidate: 60 } });
         if (!res.ok) throw new Error('Failed to fetch categories');
         return res.json();
     },
@@ -48,25 +48,25 @@ export const api = {
         const url = categorySlug
             ? `${API_BASE}/categories/${categorySlug}/products`
             : `${API_BASE}/products`;
-        const res = await fetch(url, { cache: 'no-store' });
+        const res = await fetch(url, { next: { revalidate: 60 } });
         if (!res.ok) throw new Error('Failed to fetch products');
         return res.json();
     },
 
     getProduct: async (slug: string) => {
-        const res = await fetch(`${API_BASE}/products/slug/${slug}`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/products/slug/${slug}`, { next: { revalidate: 60 } });
         if (!res.ok) throw new Error('Failed to fetch product');
         return res.json();
     },
 
     getFeaturedProducts: async () => {
-        const res = await fetch(`${API_BASE}/products/featured`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/products/featured`, { next: { revalidate: 60 } });
         if (!res.ok) throw new Error('Failed to fetch featured products');
         return res.json();
     },
 
     getPopularProducts: async (limit = 6) => {
-        const res = await fetch(`${API_BASE}/products/popular?limit=${limit}`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/products/popular?limit=${limit}`, { next: { revalidate: 60 } });
         if (!res.ok) throw new Error('Failed to fetch popular products');
         return res.json();
     },
